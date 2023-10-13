@@ -1,3 +1,14 @@
+## 4.8.13
+
+By SeventhM:
+- Fix auto assign production not working after a building is built
+- Fix consuming resources not being affected by conditionals
+
+By SomeTroglodyte:
+- Allow games with zero researched techs to be 'before' the Ancient Era
+- Minor Fix: VictoryScreenIllustrations
+- Fix font "symbols" not showing
+
 ## 4.8.12
 
 Automated units can fortify/set up/other actions
