@@ -10,8 +10,8 @@ Simple unique parameters are explained by mouseover. Complex parameters are expl
 
 	Applicable to: Triggerable, Global
 
-??? example  "Remove [buildingFilter] in [cityFilter]"
-	Example: "Remove [Monument] in [in all cities]"
+??? example  "Remove [buildingFilter] [cityFilter]"
+	Example: "Remove [Culture] [in all cities]"
 
 	Applicable to: Triggerable, Global
 
@@ -1538,8 +1538,8 @@ Simple unique parameters are explained by mouseover. Complex parameters are expl
 ??? example  "Doesn't generate naturally"
 	Applicable to: Terrain, Resource
 
-??? example  "Occurs at temperature between [amount] and [amount] and humidity between [amount] and [amount]"
-	Example: "Occurs at temperature between [3] and [3] and humidity between [3] and [3]"
+??? example  "Occurs at temperature between [fraction] and [fraction] and humidity between [fraction] and [fraction]"
+	Example: "Occurs at temperature between [0.5] and [0.5] and humidity between [0.5] and [0.5]"
 
 	Applicable to: Terrain, Resource
 
@@ -1835,6 +1835,9 @@ Simple unique parameters are explained by mouseover. Complex parameters are expl
 
 	Applicable to: Conditional
 
+??? example  "&lt;if no other Civilization has adopted this&gt;"
+	Applicable to: Conditional
+
 ??? example  "&lt;after adopting [policy/belief]&gt;"
 	Example: "&lt;after adopting [Oligarchy]&gt;"
 
@@ -1878,23 +1881,23 @@ Simple unique parameters are explained by mouseover. Complex parameters are expl
 
 	Applicable to: Conditional
 
-??? example  "&lt;when above [amount] [resource]&gt;"
-	Example: "&lt;when above [3] [Iron]&gt;"
+??? example  "&lt;when above [amount] [stat/resource]&gt;"
+	Example: "&lt;when above [3] [Culture]&gt;"
 
 	Applicable to: Conditional
 
-??? example  "&lt;when below [amount] [resource]&gt;"
-	Example: "&lt;when below [3] [Iron]&gt;"
+??? example  "&lt;when below [amount] [stat/resource]&gt;"
+	Example: "&lt;when below [3] [Culture]&gt;"
 
 	Applicable to: Conditional
 
-??? example  "&lt;when above [amount] gold&gt;"
-	Example: "&lt;when above [3] gold&gt;"
+??? example  "&lt;when above [amount] [stat] (modified by game speed)&gt;"
+	Example: "&lt;when above [3] [Culture] (modified by game speed)&gt;"
 
 	Applicable to: Conditional
 
-??? example  "&lt;when below [amount] gold&gt;"
-	Example: "&lt;when below [3] gold&gt;"
+??? example  "&lt;when below [amount] [stat] (modified by game speed)&gt;"
+	Example: "&lt;when below [3] [Culture] (modified by game speed)&gt;"
 
 	Applicable to: Conditional
 
@@ -2157,6 +2160,7 @@ Simple unique parameters are explained by mouseover. Complex parameters are expl
 *[costOrStrength]: `Cost` or `Strength`.
 *[era]: The name of any era.
 *[foundingOrEnhancing]: `founding` or `enhancing`.
+*[fraction]: Indicates a fractional number, which can be negative.
 *[improvementName]: The name of any improvement.
 *[modFilter]: A Mod name, case-sensitive _or_ a simple wildcard filter beginning and ending in an Asterisk, case-insensitive.
 *[policy]: The name of any policy.
