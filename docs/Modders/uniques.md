@@ -15,11 +15,6 @@ Simple unique parameters are explained by mouseover. Complex parameters are expl
 
 	Applicable to: Triggerable, Global
 
-??? example  "Sell [buildingFilter] [cityFilter]"
-	Example: "Sell [Culture] [in all cities]"
-
-	Applicable to: Triggerable, Global
-
 ??? example  "Free [unit] appears"
 	Example: "Free [Musketman] appears"
 
