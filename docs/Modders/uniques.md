@@ -1,5 +1,8 @@
 # Uniques
+An overview of uniques can be found [here](../Developers/Uniques.md)
+
 Simple unique parameters are explained by mouseover. Complex parameters are explained in [Unique parameter types](../Unique-parameters)
+
 ## Triggerable uniques
 !!! note ""
 
@@ -1772,13 +1775,7 @@ Simple unique parameters are explained by mouseover. Complex parameters are expl
 
 	Applicable to: Conditional
 
-??? example  "&lt;is controlled by human&gt;"
-	Applicable to: Conditional
-
-??? example  "&lt;is controlled by AI&gt;"
-	Applicable to: Conditional
-
-??? example  "&lt;for [nationFilter]&gt;"
+??? example  "&lt;for [civFilter]&gt;"
 	Example: "&lt;for [City-States]&gt;"
 
 	Applicable to: Conditional
