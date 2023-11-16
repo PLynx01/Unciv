@@ -50,7 +50,7 @@ open class Tile : IsPartOfGameInfoSerialization {
     var owningCity: City? = null
         private set
 
-    fun setOwningCity(city:City?){
+    fun setOwningCity(city:City?) {
         if (city != null) {
             if (roadStatus != RoadStatus.None && roadOwner != "") {
                 // remove previous neutral tile owner
@@ -397,7 +397,7 @@ open class Tile : IsPartOfGameInfoSerialization {
     /** Get all uniques of this type that any part of this tile has: terrains, improvement, resource */
     fun getMatchingUniques(uniqueType: UniqueType, stateForConditionals: StateForConditionals = StateForConditionals(tile=this)): Sequence<Unique> {
         var uniques = getTerrainMatchingUniques(uniqueType, stateForConditionals)
-        if (getUnpillagedImprovement() != null){
+        if (getUnpillagedImprovement() != null) {
             val tileImprovement = getTileImprovement()
             if (tileImprovement != null) {
                 uniques += tileImprovement.getMatchingUniques(uniqueType, stateForConditionals)
@@ -465,7 +465,7 @@ open class Tile : IsPartOfGameInfoSerialization {
     // This should be the only adjacency function
     fun isAdjacentTo(terrainFilter:String): Boolean {
         // Rivers are odd, as they aren't technically part of any specific tile but still count towards adjacency
-        if (terrainFilter == "River") return isAdjacentToRiver()
+        if (terrainFilter == Constants.river) return isAdjacentToRiver()
         if (terrainFilter == Constants.freshWater && isAdjacentToRiver()) return true
         return (neighbors + this).any { neighbor -> neighbor.matchesFilter(terrainFilter) }
     }
@@ -485,7 +485,7 @@ open class Tile : IsPartOfGameInfoSerialization {
             "Water" -> isWater
             "Land" -> isLand
             Constants.coastal -> isCoastalTile()
-            "River" -> isAdjacentToRiver()
+            Constants.river -> isAdjacentToRiver()
             naturalWonder -> true
             "Open terrain" -> !isRoughTerrain()
             "Rough terrain" -> isRoughTerrain()
