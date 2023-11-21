@@ -2,6 +2,7 @@ package com.unciv.models.ruleset.nation
 
 import com.badlogic.gdx.graphics.Color
 import com.unciv.Constants
+import com.unciv.logic.MultiFilter
 import com.unciv.models.ruleset.Ruleset
 import com.unciv.models.ruleset.RulesetObject
 import com.unciv.models.ruleset.unique.UniqueTarget
@@ -26,13 +27,22 @@ class Nation : RulesetObject() {
 
     var cityStateType: String? = null
     var preferredVictoryType: String = Constants.neutralVictoryType
-    var declaringWar = ""
-    var attacked = ""
-    var defeated = ""
-    var introduction = ""
-    var tradeRequest = ""
 
+    /// The following all have audio hooks to play corresponding leader
+    /// voice clips - named <civName>.<fieldName>, e.g. "America.defeated.ogg"
+    /** Shown for AlertType.WarDeclaration, when other Civs declare war on a player */
+    var declaringWar = ""
+    /** Shown in DiplomacyScreen when a player declares war */
+    var attacked = ""
+    /** Shown for AlertType.Defeated */
+    var defeated = ""
+    /** Shown for AlertType.FirstContact */
+    var introduction = ""
+    /** Shown in TradePopup when other Civs initiate trade with a player */
+    var tradeRequest = ""
+    /** Shown in DiplomacyScreen when a player contacts another major civ with RelationshipLevel.Afraid or better */
     var neutralHello = ""
+    /** Shown in DiplomacyScreen when a player contacts another major civ with RelationshipLevel.Enemy or worse */
     var hateHello = ""
 
     lateinit var outerColor: List<Int>
@@ -253,6 +263,10 @@ class Nation : RulesetObject() {
     fun getContrastRatio() = getContrastRatio(getInnerColor(), getOuterColor())
 
     fun matchesFilter(filter: String): Boolean {
+        return MultiFilter.multiFilter(filter, ::matchesSingleFilter)
+    }
+
+    fun matchesSingleFilter(filter: String): Boolean {
         return when (filter) {
             "All" -> true
             name -> true

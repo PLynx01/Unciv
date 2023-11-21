@@ -74,7 +74,7 @@ object UniqueTriggerActivation {
 
                 civInfo.addNotification(
                     notificationText,
-                    MapUnitAction(placedUnit.getTile().position),
+                    MapUnitAction(placedUnit),
                     NotificationCategory.Units,
                     placedUnit.name
                 )
@@ -142,7 +142,7 @@ object UniqueTriggerActivation {
                     civInfo.addNotification(
                         notificationText,
                         sequence {
-                            yield(MapUnitAction(placedUnit.getTile().position))
+                            yield(MapUnitAction(placedUnit))
                             yieldAll(LocationAction(tile?.position))
                         },
                         NotificationCategory.Units,
@@ -458,6 +458,29 @@ object UniqueTriggerActivation {
                 return true
             }
 
+            UniqueType.OneTimeGainStatSpeed -> {
+                val stat = Stat.safeValueOf(unique.params[1]) ?: return false
+
+                if (stat !in Stat.statsWithCivWideField
+                    || unique.params[0].toIntOrNull() == null
+                ) return false
+
+                val statAmount = (unique.params[0].toInt() * (civInfo.gameInfo.speed.statCostModifiers[stat]!!)).roundToInt()
+                val stats = Stats().add(stat, statAmount.toFloat())
+                civInfo.addStats(stats)
+
+                val filledNotification = if(notification!=null && notification.hasPlaceholderParameters())
+                    notification.fillPlaceholders(statAmount.toString())
+                else notification
+
+                val notificationText = getNotificationText(filledNotification, triggerNotificationText,
+                    "Gained [${stats.toStringForNotifications()}]")
+                    ?: return true
+
+                civInfo.addNotification(notificationText, LocationAction(tile?.position), NotificationCategory.General, stat.notificationIcon)
+                return true
+            }
+
             UniqueType.OneTimeGainStatRange -> {
                 val stat = Stat.safeValueOf(unique.params[2]) ?: return false
 
@@ -659,6 +682,26 @@ object UniqueTriggerActivation {
                     }.toSet()
 
                     applicableCity.cityConstructions.removeBuildings(buildingsToRemove)
+                }
+
+                return true
+            }
+
+            UniqueType.SellBuilding -> {
+
+                val applicableCities = civInfo.cities.asSequence().filter {
+                    it.matchesFilter(unique.params[1])
+                }
+
+                for (applicableCity in applicableCities) {
+                    val buildingsToSell = applicableCity.cityConstructions.getBuiltBuildings().filter {
+                        it.matchesFilter(unique.params[0]) && it.isSellable()
+                    }
+
+                    for (building in buildingsToSell) {
+                        applicableCity.sellBuilding(building)
+                    }
+
                 }
 
                 return true

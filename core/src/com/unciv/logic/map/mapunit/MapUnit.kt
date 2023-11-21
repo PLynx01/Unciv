@@ -3,6 +3,7 @@ package com.unciv.logic.map.mapunit
 import com.badlogic.gdx.math.Vector2
 import com.unciv.Constants
 import com.unciv.logic.IsPartOfGameInfoSerialization
+import com.unciv.logic.MultiFilter
 import com.unciv.logic.automation.unit.UnitAutomation
 import com.unciv.logic.battle.BattleUnitCapture
 import com.unciv.logic.battle.MapUnitCombatant
@@ -20,11 +21,11 @@ import com.unciv.models.ruleset.unique.StateForConditionals
 import com.unciv.models.ruleset.unique.Unique
 import com.unciv.models.ruleset.unique.UniqueMap
 import com.unciv.models.ruleset.unique.UniqueType
+import com.unciv.models.ruleset.unique.UniqueTriggerActivation
 import com.unciv.models.ruleset.unit.BaseUnit
 import com.unciv.models.ruleset.unit.UnitType
 import com.unciv.models.stats.Stats
 import com.unciv.ui.components.UnitMovementMemoryType
-import com.unciv.ui.components.extensions.filterAndLogic
 import java.text.DecimalFormat
 import kotlin.math.pow
 import kotlin.math.ulp
@@ -43,6 +44,7 @@ class MapUnit : IsPartOfGameInfoSerialization {
 
     @Transient
     lateinit var currentTile: Tile
+    fun hasTile() = ::currentTile.isInitialized
 
     @Transient
     val movement = UnitMovement(this)
@@ -343,8 +345,29 @@ class MapUnit : IsPartOfGameInfoSerialization {
         if (updateCivViewableTiles && oldViewableTiles != viewableTiles
                 // Don't bother updating if all previous and current viewable tiles are within our borders
                 && (oldViewableTiles.any { it !in civ.cache.ourTilesAndNeighboringTiles }
-                        || viewableTiles.any { it !in civ.cache.ourTilesAndNeighboringTiles }))
+                        || viewableTiles.any { it !in civ.cache.ourTilesAndNeighboringTiles })) {
+
+            val unfilteredTriggeredUniques = getTriggeredUniques(UniqueType.TriggerUponDiscoveringTile, StateForConditionals.IgnoreConditionals).toList()
+            if (unfilteredTriggeredUniques.isNotEmpty()) {
+                val newlyExploredTiles = viewableTiles.filter {
+                    !it.isExplored(civ)
+                }
+                for (tile in newlyExploredTiles) {
+                    // Include tile in the state for correct RNG seeding
+                    val state = StateForConditionals(civInfo=civ, unit=this, tile=tile);
+                    for (unique in unfilteredTriggeredUniques) {
+                        if (unique.conditionals.any {
+                                it.type == UniqueType.TriggerUponDiscoveringTile
+                                && tile.matchesFilter(it.params[0], civ)
+                            } && unique.conditionalsApply(state)
+                        )
+                            UniqueTriggerActivation.triggerUnitwideUnique(unique, this)
+                    }
+                }
+            }
+
             civ.cache.updateViewableTiles(explorerPosition)
+        }
     }
 
     fun isActionUntilHealed() = action?.endsWith("until healed") == true
@@ -803,8 +826,14 @@ class MapUnit : IsPartOfGameInfoSerialization {
 
     fun canIntercept(attackedTile: Tile): Boolean {
         if (!canIntercept()) return false
-        if (currentTile.aerialDistanceTo(attackedTile) > baseUnit.interceptRange) return false
+        if (currentTile.aerialDistanceTo(attackedTile) > getInterceptionRange()) return false
         return true
+    }
+
+    fun getInterceptionRange():Int {
+        val rangeFromUniques = getMatchingUniques(UniqueType.AirInterceptionRange, checkCivInfoUniques = true)
+            .sumOf { it.params[0].toInt() }
+        return baseUnit.interceptRange + rangeFromUniques
     }
 
     fun canIntercept(): Boolean {
@@ -882,9 +911,11 @@ class MapUnit : IsPartOfGameInfoSerialization {
 
     /** Implements [UniqueParameterType.MapUnitFilter][com.unciv.models.ruleset.unique.UniqueParameterType.MapUnitFilter] */
     fun matchesFilter(filter: String): Boolean {
-        return filter.filterAndLogic { matchesFilter(it) } // multiple types at once - AND logic. Looks like:"{Military} {Land}"
-            ?: when (filter) {
+        return MultiFilter.multiFilter(filter, ::matchesSingleFilter)
+    }
 
+    private fun matchesSingleFilter(filter:String): Boolean {
+        return when (filter) {
             Constants.wounded, "wounded units" -> health < 100
             Constants.barbarians, "Barbarian" -> civ.isBarbarian()
             "City-State" -> civ.isCityState()
