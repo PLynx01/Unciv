@@ -5,6 +5,7 @@ import com.unciv.Constants
 import com.unciv.json.HashMapVector2
 import com.unciv.logic.GameInfo
 import com.unciv.logic.IsPartOfGameInfoSerialization
+import com.unciv.logic.MultiFilter
 import com.unciv.logic.UncivShowableException
 import com.unciv.logic.automation.ai.TacticalAI
 import com.unciv.logic.automation.unit.WorkerAutomation
@@ -23,6 +24,7 @@ import com.unciv.logic.civilization.managers.QuestManager
 import com.unciv.logic.civilization.managers.ReligionManager
 import com.unciv.logic.civilization.managers.RuinsManager
 import com.unciv.logic.civilization.managers.TechManager
+import com.unciv.logic.civilization.managers.ThreatManager
 import com.unciv.logic.civilization.managers.UnitManager
 import com.unciv.logic.civilization.managers.VictoryManager
 import com.unciv.logic.civilization.transients.CivInfoStatsForNextTurn
@@ -87,6 +89,9 @@ class Civilization : IsPartOfGameInfoSerialization {
 
     @Transient
     val units = UnitManager(this)
+    
+    @Transient
+    var threatManager = ThreatManager(this)
 
     @Transient
     var diplomacyFunctions = DiplomacyFunctions(this)
@@ -491,6 +496,10 @@ class Civilization : IsPartOfGameInfoSerialization {
     }
 
     fun matchesFilter(filter: String): Boolean {
+        return MultiFilter.multiFilter(filter, ::matchesSingleFilter)
+    }
+
+    fun matchesSingleFilter(filter: String): Boolean {
         return when (filter) {
             "Human player" -> isHuman()
             "AI player" -> isAI()
