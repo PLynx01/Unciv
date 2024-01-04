@@ -2,7 +2,6 @@ package com.unciv.logic.battle
 
 import com.badlogic.gdx.math.Vector2
 import com.unciv.Constants
-import com.unciv.GUI
 import com.unciv.UncivGame
 import com.unciv.logic.automation.civilization.NextTurnAutomation
 import com.unciv.logic.city.City
@@ -483,19 +482,29 @@ object Battle {
         promotions.XP += xpGained
 
         if (!otherIsBarbarian && civ.isMajorCiv()) { // Can't get great generals from Barbarians
-            val greatGeneralPointsBonus = thisCombatant
-                .getMatchingUniques(UniqueType.GreatPersonEarnedFaster, stateForConditionals, true)
-                .filter { unique ->
-                    val unitName = unique.params[0]
-                    // From the unique we know this unit exists
-                    val unit = civ.gameInfo.ruleset.units[unitName]!!
-                    unit.uniques.contains("Great Person - [War]")
-                }
-                .sumOf { it.params[1].toDouble() }
-            val greatGeneralPointsModifier = 1.0 + greatGeneralPointsBonus / 100
+            var greatGeneralUnits = civ.gameInfo.ruleset.greatGeneralUnits
+                    .filter { it.hasUnique(UniqueType.GreatPersonFromCombat, stateForConditionals) && 
+                        // Check if the unit is allowed for the Civ, ignoring build constrants
+                        it.getRejectionReasons(civ).none { reason ->
+                            !reason.isConstructionRejection() &&
+                            // Allow Generals even if not allowed via tech
+                            !reason.techPolicyEraWonderRequirements() }
+                    }.asSequence()
+            // For compatibility with older rulesets
+            if (civ.gameInfo.ruleset.greatGeneralUnits.isEmpty() && 
+                civ.gameInfo.ruleset.units["Great General"] != null)
+                greatGeneralUnits += civ.gameInfo.ruleset.units["Great General"]!!
 
-            val greatGeneralPointsGained = (xpGained * greatGeneralPointsModifier).toInt()
-            civ.greatPeople.greatGeneralPoints += greatGeneralPointsGained
+            for (unit in greatGeneralUnits) {
+                val greatGeneralPointsBonus = thisCombatant
+                    .getMatchingUniques(UniqueType.GreatPersonEarnedFaster, stateForConditionals, true)
+                    .filter { unit.matchesFilter(it.params[0]) }
+                    .sumOf { it.params[1].toDouble() }
+                val greatGeneralPointsModifier = 1.0 + greatGeneralPointsBonus / 100
+
+                val greatGeneralPointsGained = (xpGained * greatGeneralPointsModifier).toInt()
+                civ.greatPeople.greatGeneralPointsCounter[unit.name] += greatGeneralPointsGained
+            }
         }
 
         if (!thisCombatant.isDefeated() && !unitCouldAlreadyPromote && promotions.canBePromoted()) {
@@ -546,7 +555,7 @@ object Battle {
 
         for (unique in attackerCiv.getTriggeredUniques(UniqueType.TriggerUponConqueringCity, stateForConditionals)
                 + attacker.unit.getTriggeredUniques(UniqueType.TriggerUponConqueringCity, stateForConditionals))
-            UniqueTriggerActivation.triggerCivwideUnique(unique, attackerCiv, city)
+            UniqueTriggerActivation.triggerUnitwideUnique(unique, attacker.unit)
     }
 
     /** Handle decision making after city conquest, namely whether the AI should liberate, puppet,
