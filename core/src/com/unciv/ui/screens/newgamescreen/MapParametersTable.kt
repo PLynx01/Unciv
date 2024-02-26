@@ -14,17 +14,17 @@ import com.unciv.logic.map.MapShape
 import com.unciv.logic.map.MapSize
 import com.unciv.logic.map.MapSizeNew
 import com.unciv.logic.map.MapType
-import com.unciv.ui.components.widgets.ExpanderTab
-import com.unciv.ui.components.widgets.TranslatedSelectBox
-import com.unciv.ui.components.widgets.UncivSlider
 import com.unciv.ui.components.UncivTextField
-import com.unciv.ui.components.widgets.WrappableLabel
-import com.unciv.ui.components.input.onChange
-import com.unciv.ui.components.input.onClick
 import com.unciv.ui.components.extensions.pad
 import com.unciv.ui.components.extensions.toCheckBox
 import com.unciv.ui.components.extensions.toLabel
 import com.unciv.ui.components.extensions.toTextButton
+import com.unciv.ui.components.input.onChange
+import com.unciv.ui.components.input.onClick
+import com.unciv.ui.components.widgets.ExpanderTab
+import com.unciv.ui.components.widgets.TranslatedSelectBox
+import com.unciv.ui.components.widgets.UncivSlider
+import com.unciv.ui.components.widgets.WrappableLabel
 import com.unciv.ui.screens.basescreen.BaseScreen
 
 /** Table for editing [mapParameters]
@@ -55,6 +55,8 @@ class MapParametersTable(
     private lateinit var noRuinsCheckbox: CheckBox
     private lateinit var noNaturalWondersCheckbox: CheckBox
     private lateinit var worldWrapCheckbox: CheckBox
+    private lateinit var legendaryStartCheckbox: CheckBox
+    private lateinit var strategicBalanceCheckbox: CheckBox
     private lateinit var seedTextField: TextField
 
     private lateinit var mapShapesOptionsValues: HashSet<String>
@@ -79,11 +81,11 @@ class MapParametersTable(
         clear()
 
         skin = BaseScreen.skin
-        defaults().pad(5f, 10f)
+        defaults().pad(5f, 5f)
         if (mapGeneratedMainType == MapGeneratedMainType.randomGenerated) {
             val prompt = "Which options should be available to the random selection?"
             val width = (previousScreen as? NewGameScreen)?.getColumnWidth() ?: 200f
-            val label = WrappableLabel(prompt, width - 20f)  // 20 is the defaults() padding
+            val label = WrappableLabel(prompt, width - 10f)  // 20 is the defaults() padding
             label.setAlignment(Align.center)
             label.wrap = true
             add(label).colspan(2).grow().row()
@@ -320,11 +322,27 @@ class MapParametersTable(
         add(worldWrapCheckbox).row()
     }
 
+    private fun Table.addStrategicBalanceCheckbox() {
+        strategicBalanceCheckbox = "Strategic Balance".toCheckBox(mapParameters.strategicBalance) {
+            mapParameters.strategicBalance = it
+        }
+        add(strategicBalanceCheckbox).row()
+    }
+
+    private fun Table.addLegendaryStartCheckbox() {
+        legendaryStartCheckbox = "Legendary Start".toCheckBox(mapParameters.legendaryStart) {
+            mapParameters.legendaryStart = it
+        }
+        add(legendaryStartCheckbox).row()
+    }
+
     private fun addWrappedCheckBoxes() {
         val worldWrapWarning = "World wrap maps are very memory intensive - creating large world wrap maps on Android can lead to crashes!"
         if (mapGeneratedMainType == MapGeneratedMainType.randomGenerated) {
             add(ExpanderTab("{Other Settings}", persistenceID = "NewGameOtherSettings", startsOutOpened = false) {
                 it.defaults().pad(5f,0f)
+                it.addStrategicBalanceCheckbox()
+                it.addLegendaryStartCheckbox()
                 it.addNoRuinsCheckbox()
                 it.addNoNaturalWondersCheckbox()
                 it.addWorldWrapCheckbox()
@@ -333,6 +351,8 @@ class MapParametersTable(
         } else {
             add(Table(skin).apply {
                 defaults().left().pad(2.5f)
+                addStrategicBalanceCheckbox()
+                addLegendaryStartCheckbox()
                 addNoRuinsCheckbox()
                 addNoNaturalWondersCheckbox()
                 addWorldWrapCheckbox()

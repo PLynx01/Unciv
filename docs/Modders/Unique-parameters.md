@@ -11,7 +11,7 @@ Note that all of these are case-sensitive!
 
 ## General Filter Rules
 
-All filters except for `cityFilter` and `populationFilter` accept multiple values in the format: `{A} {B} {C}` etc, meaning "the object must match ALL of these filters"
+All filters except for `populationFilter` accept multiple values in the format: `{A} {B} {C}` etc, meaning "the object must match ALL of these filters"
 
 > Example: `[{Military} {Water}] units`, `[{Wounded} {Armor}] units`, etc.
 
@@ -33,13 +33,9 @@ This is because to the player, the text will be `non-Wounded Armor units`, which
 
 Allows filtering for specific civs.
 
-- `All`
-- `City-states`
-- `Major`
 - `Human player`
 - `AI player`
-- Nation name
-- A unique a Nation has (verbatim, no placeholders)
+- [nationFilter](#nationfilter)
 
 ## nationFilter
 
@@ -115,22 +111,25 @@ cityFilters allow us to choose the range of cities affected by this unique:
 
 - `in this city`
 - `in all cities`
-- `in other cities`
-- `in all coastal cities`
-- `in capital`
-- `in all non-occupied cities` - all cities that are not puppets and don't have extra unhappiness from being recently conquered
+- `in your cities`, `Your`
+- `in all coastal cities`, `Coastal`
+- `in capital`, `Capital`
+- `in all non-occupied cities`, `Non-occupied` - all cities that are not puppets and don't have extra unhappiness from being recently conquered
 - `in all cities with a world wonder`
 - `in all cities connected to capital`
-- `in all cities with a garrison`
+- `in all cities with a garrison`, `Garrisoned`
 - `in non-enemy foreign cities` - In all cities owned by civs other than you that you are not at war with
-- `in foreign cities`
-- `in annexed cities`
-- `in puppeted cities`
-- `in holy cities`
+- `in enemy cities`, `Enemy`
+- `in foreign cities`, `Foreign`
+- `in annexed cities`, `Annexed`
+- `in puppeted cities`, `Puppeted`
+- `in holy cities`, `Holy`
 - `in City-State cities`
 - `in cities following this religion` - Should only be used in pantheon/follower uniques for religions
+- `in cities following our religion`
 - `in all cities in which the majority religion is a major religion`
 - `in all cities in which the majority religion is an enhanced religion`
+- [civFilter]
 
 ## improvementFilter
 
@@ -138,7 +137,7 @@ For filtering a specific improvement.
 
 Allowed values are:
 
-- improvement name (Note that "Road" and "Railroad" _do_ work as improvementFilters, but not as tileFilters at the moment.)
+- improvement name
 - `All`
 - `Great Improvements`, `Great`
 - `All Road` - for Roads & Railroads
@@ -151,6 +150,14 @@ A filter determining a part of the population of a city. It can be any of the fo
 - `Specialists`
 - `Unemployed`
 - `Followers of the Majority Religion` or `Followers of this Religion`, both of which only apply when this religion is the majority religion in that city
+
+## combatantFilter
+
+Can be any of:
+- [mapUnitFilter](#mapunitfilter), for unit combatants
+- `City`, `All`, or [civFilter](#civfilter), for city combatants
+
+Since mapUnitFilter contains civFilter, that means civFilter can be applied to combatantFilter for both units and cities.
 
 ## regionType
 
@@ -205,6 +212,7 @@ This indicates the terrain on a single tile. The following values are allowed:
     - A [nationFilter](#nationfilter) matching the tile owner
 - Or the filter is a constant string choosing a derived test:
     - `All`
+    - `Terrain`
     - `Water`, `Land`
     - `Coastal` (at least one direct neighbor is a coast)
     - `River` (as in all 'river on tile' contexts, it means 'adjacent to a river on at least one side')
@@ -212,7 +220,8 @@ This indicates the terrain on a single tile. The following values are allowed:
     - `Friendly Land` - land belonging to you, or other civs with open borders to you
     - `Foreign Land` - any land that isn't friendly land
     - `Enemy land` - any land belonging to a civ you are at war with
-    - `Water resource`, `Strategic resource`, `Luxury resource`, `Bonus resource`
+    - `your` - land belonging to you
+    - `Water resource`, `Strategic resource`, `Luxury resource`, `Bonus resource`, `resource`
     - `Natural Wonder` (as opposed to above which means testing for a specific Natural Wonder by name, this tests for any of them)
 
 Please note all of these are _case-sensitive_.
@@ -227,7 +236,7 @@ Any of:
 
 - [terrainFilter](#terrainfilter) for this tile
 - [improvementFilter](#improvementfilter) for this tile
-- `Improvement` for tiles with any improvements
+- `Improvement` or `improved` for tiles with any improvements
 - `unimproved` for tiles with no improvement
 
 ## terrainQuality

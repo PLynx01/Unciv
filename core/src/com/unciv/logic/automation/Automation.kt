@@ -10,6 +10,7 @@ import com.unciv.logic.map.tile.Tile
 import com.unciv.models.ruleset.Building
 import com.unciv.models.ruleset.INonPerpetualConstruction
 import com.unciv.models.ruleset.Victory
+import com.unciv.models.ruleset.nation.PersonalityValue
 import com.unciv.models.ruleset.tile.ResourceType
 import com.unciv.models.ruleset.tile.TileImprovement
 import com.unciv.models.ruleset.unique.LocalUniqueCache
@@ -45,6 +46,8 @@ object Automation {
     private fun rankStatsForCityWork(stats: Stats, city: City, cityStats: Stats, specialist: Boolean, localUniqueCache: LocalUniqueCache): Float {
         val cityAIFocus = city.getCityFocus()
         val yieldStats = stats.clone()
+        val civPersonality = city.civ.getPersonality()
+        val cityStatsObj = city.cityStats
 
         if (specialist) {
             // If you have the Food Bonus, count as 1 extra food production (base is 2food)
@@ -59,6 +62,12 @@ object Automation {
         }
 
         val surplusFood = cityStats[Stat.Food]
+        // If current Production converts Food into Production, then calculate increased Production Yield
+        if (cityStatsObj.canConvertFoodToProduction(surplusFood, city.cityConstructions.getCurrentConstruction())) {
+            // calculate delta increase of food->prod. This isn't linear
+            yieldStats.production += cityStatsObj.getProductionFromExcessiveFood(surplusFood+yieldStats.food) - cityStatsObj.getProductionFromExcessiveFood(surplusFood)
+            yieldStats.food = 0f  // all food goes to 0
+        }
         // Apply base weights
         yieldStats.applyRankingWeights()
 
@@ -85,15 +94,23 @@ object Automation {
         } else {
             if (city.civ.gold < 0 && city.civ.stats.statsForNextTurn.gold <= 0)
                 yieldStats.gold *= 2 // We have a global problem
+            yieldStats.gold *= civPersonality.scaledFocus(PersonalityValue.Gold)
 
             if (city.tiles.size < 12 || city.civ.wantsToFocusOn(Victory.Focus.Culture))
                 yieldStats.culture *= 2
+            yieldStats.culture *= civPersonality.scaledFocus(PersonalityValue.Culture)
 
             if (city.civ.getHappiness() < 0 && !specialist) // since this doesn't get updated, may overshoot
                 yieldStats.happiness *= 2
+            yieldStats.happiness *= civPersonality.scaledFocus(PersonalityValue.Happiness)
 
             if (city.civ.wantsToFocusOn(Victory.Focus.Science))
                 yieldStats.science *= 2
+            yieldStats.science *= civPersonality.scaledFocus(PersonalityValue.Science)
+
+            yieldStats.production *= civPersonality.scaledFocus(PersonalityValue.Production)
+            yieldStats.faith *= civPersonality.scaledFocus(PersonalityValue.Faith)
+            yieldStats.food *= civPersonality.scaledFocus(PersonalityValue.Food)
         }
 
         // Apply City focus

@@ -11,6 +11,7 @@ import com.unciv.ui.components.fonts.FontFamilyData
 import com.unciv.ui.components.fonts.Fonts
 import com.unciv.ui.components.input.KeyboardBindings
 import com.unciv.ui.screens.overviewscreen.EmpireOverviewCategories
+import com.unciv.ui.screens.worldscreen.NotificationsScroll
 import com.unciv.utils.Display
 import com.unciv.utils.ScreenOrientation
 import java.text.Collator
@@ -67,6 +68,7 @@ class GameSettings {
     var automatedUnitsMoveOnTurnStart: Boolean = false
     var automatedUnitsCanUpgrade: Boolean = false
     var automatedUnitsChoosePromotions: Boolean = false
+    var citiesAutoBombardAtEndOfTurn: Boolean = false
 
     var showMinimap: Boolean = true
     var minimapSize: Int = 6    // default corresponds to 15% screen space
@@ -115,8 +117,9 @@ class GameSettings {
 
     var keyBindings = KeyboardBindings()
 
-    /** NotificationScroll on Word Screen visibility control - mapped to NotificationsScroll.UserSetting enum */
-    var notificationScroll: String = ""
+    /** NotificationScroll on Word Screen visibility control - mapped to [NotificationsScroll.UserSetting] enum */
+    // Defaulting this to "" - and implement the fallback only in NotificationsScroll leads to Options popup and actual effect being in disagreement!
+    var notificationScroll: String = NotificationsScroll.UserSetting.default().name
 
     /** If on, selected notifications are drawn enlarged with wider padding */
     var enlargeSelectedNotification = true

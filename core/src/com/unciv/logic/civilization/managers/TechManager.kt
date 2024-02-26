@@ -18,6 +18,7 @@ import com.unciv.logic.map.tile.RoadStatus
 import com.unciv.models.ruleset.INonPerpetualConstruction
 import com.unciv.models.ruleset.tech.Era
 import com.unciv.models.ruleset.tech.Technology
+import com.unciv.models.ruleset.unique.StateForConditionals
 import com.unciv.models.ruleset.unique.UniqueMap
 import com.unciv.models.ruleset.unique.UniqueTriggerActivation
 import com.unciv.models.ruleset.unique.UniqueType
@@ -160,8 +161,9 @@ class TechManager : IsPartOfGameInfoSerialization {
 
     fun canBeResearched(techName: String): Boolean {
         val tech = getRuleset().technologies[techName]!!
-        if (tech.uniqueObjects.any { it.type == UniqueType.OnlyAvailableWhen && !it.conditionalsApply(civInfo) })
+        if (tech.getMatchingUniques(UniqueType.OnlyAvailable, StateForConditionals.IgnoreConditionals).any { !it.conditionalsApply(civInfo) })
             return false
+        if (tech.hasUnique(UniqueType.Unavailable, StateForConditionals(civInfo))) return false
 
         if (isResearched(tech.name) && !tech.isContinuallyResearchable())
             return false
@@ -285,20 +287,7 @@ class TechManager : IsPartOfGameInfoSerialization {
         researchedTechnologies = researchedTechnologies.withItem(newTech)
         addTechToTransients(newTech)
 
-        val triggerNotificationText = "due to researching [$techName]"
-        for (unique in newTech.uniqueObjects)
-            if (!unique.hasTriggerConditional())
-                UniqueTriggerActivation.triggerCivwideUnique(unique, civInfo, triggerNotificationText = triggerNotificationText)
-
-        for (unique in civInfo.getTriggeredUniques(UniqueType.TriggerUponResearch))
-            if (unique.conditionals.any {it.type == UniqueType.TriggerUponResearch && it.params[0] == techName})
-                UniqueTriggerActivation.triggerCivwideUnique(unique, civInfo, triggerNotificationText = triggerNotificationText)
-
-
-        updateTransientBooleans()
-        for (city in civInfo.cities) {
-            city.reassignPopulationDeferred()
-        }
+        moveToNewEra(showNotification)
 
         if (!civInfo.isSpectator() && showNotification)
             civInfo.addNotification("Research of [$techName] has completed!", TechAction(techName),
@@ -307,16 +296,33 @@ class TechManager : IsPartOfGameInfoSerialization {
         if (isNewTech)
             civInfo.popupAlerts.add(PopupAlert(AlertType.TechResearched, techName))
 
+        val triggerNotificationText = "due to researching [$techName]"
+        for (unique in newTech.uniqueObjects)
+            if (!unique.hasTriggerConditional() && unique.conditionalsApply(StateForConditionals(civInfo)))
+                UniqueTriggerActivation.triggerUnique(unique, civInfo, triggerNotificationText = triggerNotificationText)
+
+        for (unique in civInfo.getTriggeredUniques(UniqueType.TriggerUponResearch))
+            if (unique.conditionals.any {it.type == UniqueType.TriggerUponResearch && it.params[0] == techName})
+                UniqueTriggerActivation.triggerUnique(unique, civInfo, triggerNotificationText = triggerNotificationText)
+
+
         val revealedResources = getRuleset().tileResources.values.filter { techName == it.revealedBy }
         if (civInfo.playerType == PlayerType.Human) {
             for (revealedResource in revealedResources) {
                 civInfo.gameInfo.notifyExploredResources(civInfo, revealedResource.name, 5)
             }
         }
+
+        updateTransientBooleans()
+
         // In the case of a player hurrying research, this civ's resource availability may now be out of date
         // - e.g. when an owned tile by luck already has an appropriate improvement or when a tech provides a resource.
         // That can be seen on WorldScreenTopBar, so better update.
         civInfo.cache.updateCivResources()
+
+        for (city in civInfo.cities) {
+            city.reassignPopulationDeferred()
+        }
 
         obsoleteOldUnits(techName)
 
@@ -326,7 +332,6 @@ class TechManager : IsPartOfGameInfoSerialization {
                 MayaLongCountAction(), NotificationCategory.General, MayaCalendar.notificationIcon)
         }
 
-        moveToNewEra(showNotification)
         updateResearchProgress()
     }
 
@@ -407,7 +412,7 @@ class TechManager : IsPartOfGameInfoSerialization {
                         NotificationIcon.Science
                     )
                 if (civInfo.isMajorCiv()) {
-                    for (knownCiv in civInfo.getKnownCivs()) {
+                    for (knownCiv in civInfo.getKnownCivsWithSpectators()) {
                         knownCiv.addNotification(
                             "[${civInfo.civName}] has entered the [$currentEra]!",
                             NotificationCategory.General, civInfo.civName, NotificationIcon.Science
@@ -434,8 +439,8 @@ class TechManager : IsPartOfGameInfoSerialization {
 
             for (era in erasPassed)
                 for (unique in era.uniqueObjects)
-                    if (!unique.hasTriggerConditional())
-                        UniqueTriggerActivation.triggerCivwideUnique(
+                    if (!unique.hasTriggerConditional() && unique.conditionalsApply(StateForConditionals(civInfo)))
+                        UniqueTriggerActivation.triggerUnique(
                             unique,
                             civInfo,
                             triggerNotificationText = "due to entering the [${era.name}]"
@@ -445,7 +450,7 @@ class TechManager : IsPartOfGameInfoSerialization {
             for (unique in civInfo.getTriggeredUniques(UniqueType.TriggerUponEnteringEra))
                 for (eraName in eraNames)
                     if (unique.conditionals.any { it.type == UniqueType.TriggerUponEnteringEra && it.params[0] == eraName })
-                        UniqueTriggerActivation.triggerCivwideUnique(
+                        UniqueTriggerActivation.triggerUnique(
                             unique,
                             civInfo,
                             triggerNotificationText = "due to entering the [$eraName]"
@@ -497,10 +502,10 @@ class TechManager : IsPartOfGameInfoSerialization {
     private fun updateTransientBooleans() {
         unitsCanEmbark = civInfo.hasUnique(UniqueType.LandUnitEmbarkation)
         val enterOceanUniques = civInfo.getMatchingUniques(UniqueType.UnitsMayEnterOcean)
-        allUnitsCanEnterOcean = enterOceanUniques.any { it.params[0] == "All" }
+        allUnitsCanEnterOcean = enterOceanUniques.any { it.params[0] in Constants.all }
         embarkedUnitsCanEnterOcean = allUnitsCanEnterOcean ||
                 enterOceanUniques.any { it.params[0] == Constants.embarked }
-        specificUnitsCanEnterOcean = enterOceanUniques.any { it.params[0] != "All" && it.params[0] != Constants.embarked }
+        specificUnitsCanEnterOcean = enterOceanUniques.any { it.params[0] !in Constants.all && it.params[0] != Constants.embarked }
 
         movementSpeedOnRoads = if (civInfo.hasUnique(UniqueType.RoadMovementSpeed))
             RoadStatus.Road.movementImproved else RoadStatus.Road.movement

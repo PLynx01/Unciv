@@ -51,6 +51,7 @@ class Nation : RulesetObject() {
     var uniqueText = ""
     var innerColor: List<Int>? = null
     var startBias = ArrayList<String>()
+    var personality: String? = null
 
     var startIntroPart1 = ""
     var startIntroPart2 = ""
@@ -158,13 +159,13 @@ class Nation : RulesetObject() {
         fun addBonusLines(header: String, uniqueMap: UniqueMap) {
             // Note: Using getCityStateBonuses would be nice, but it's bound to a CityStateFunctions instance without even using `this`.
             // Too convoluted to reuse that here - but feel free to refactor that into a static.
-            val boni = uniqueMap.getAllUniques().filterNot { it.isHiddenToUsers() }
-            if (boni.none()) return
+            val bonuses = uniqueMap.getAllUniques().filterNot { it.isHiddenToUsers() }
+            if (bonuses.none()) return
             textList += FormattedLine()
             textList += FormattedLine("{$header:} ")
-            for (unique in boni) {
+            for (unique in bonuses) {
                 textList += FormattedLine(unique, indent = 1)
-                if (unique.isOfType(UniqueType.CityStateUniqueLuxury)) showResources = true
+                if (unique.type == UniqueType.CityStateUniqueLuxury) showResources = true
             }
         }
 
@@ -252,8 +253,10 @@ class Nation : RulesetObject() {
                     )
                 }
             }
-            for (unique in improvement.uniques)
+            for (unique in improvement.uniqueObjects) {
+                if (unique.isHiddenToUsers()) continue
                 yield(FormattedLine(unique, indent = 1))
+            }
         }
     }
 
@@ -263,9 +266,9 @@ class Nation : RulesetObject() {
         return MultiFilter.multiFilter(filter, ::matchesSingleFilter)
     }
 
-    fun matchesSingleFilter(filter: String): Boolean {
+    private fun matchesSingleFilter(filter: String): Boolean {
         return when (filter) {
-            "All" -> true
+            in Constants.all -> true
             name -> true
             "Major" -> isMajorCiv
             // "CityState" to be deprecated, replaced by "City-States"
