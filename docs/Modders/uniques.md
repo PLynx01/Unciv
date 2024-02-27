@@ -1070,6 +1070,12 @@ Simple unique parameters are explained by mouseover. Complex parameters are expl
 
 	Applicable to: Building, Unit
 
+??? example  "[amount]% production cost"
+	Intended to be used with conditionals to dynamically alter construction costs
+	Example: "[3]% production cost"
+
+	Applicable to: Building, Unit
+
 ??? example  "Can only be built [cityFilter]"
 	Example: "Can only be built [in all cities]"
 
@@ -1910,6 +1916,11 @@ Simple unique parameters are explained by mouseover. Complex parameters are expl
 
 	Applicable to: Conditional
 
+??? example  "&lt;when above [amount] Happiness&gt;"
+	Example: "&lt;when above [3] Happiness&gt;"
+
+	Applicable to: Conditional
+
 ??? example  "&lt;when below [amount] Happiness&gt;"
 	Example: "&lt;when below [3] Happiness&gt;"
 
@@ -2070,6 +2081,11 @@ Simple unique parameters are explained by mouseover. Complex parameters are expl
 
 ??? example  "&lt;in cities with at least [amount] [populationFilter]&gt;"
 	Example: "&lt;in cities with at least [3] [Followers of this Religion]&gt;"
+
+	Applicable to: Conditional
+
+??? example  "&lt;in cities with [amount] [populationFilter]&gt;"
+	Example: "&lt;in cities with [3] [Followers of this Religion]&gt;"
 
 	Applicable to: Conditional
 
