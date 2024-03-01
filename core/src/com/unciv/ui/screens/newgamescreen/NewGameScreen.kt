@@ -71,7 +71,7 @@ class NewGameScreen(
 
         rightSideButton.enable()  // now because PlayerPickerTable init might disable it again
         playerPickerTable = PlayerPickerTable(
-            this, gameSetupInfo.gameParameters,
+            this, gameSetupInfo.gameParameters, gameSetupInfo,
             if (isPortrait) stage.width - 20f else 0f
         )
         newGameOptionsTable = GameOptionsTable(

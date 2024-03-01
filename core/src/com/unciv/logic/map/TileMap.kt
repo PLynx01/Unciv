@@ -51,8 +51,8 @@ class TileMap(initialCapacity: Int = 10) : IsPartOfGameInfoSerialization {
      * @param position [Vector2] of the location
      * @param nation Name of the nation
      */
-    private data class StartingLocation(val position: Vector2 = Vector2.Zero, val nation: String = "") : IsPartOfGameInfoSerialization
-    private val startingLocations = arrayListOf(StartingLocation(Vector2.Zero, legacyMarker))
+    data class StartingLocation(val position: Vector2 = Vector2.Zero, val nation: String = "") : IsPartOfGameInfoSerialization
+    val startingLocations = arrayListOf(StartingLocation(Vector2.Zero, legacyMarker))
 
     //endregion
     //region Fields, Transient

@@ -9,6 +9,8 @@ import com.unciv.Constants
 import com.unciv.UncivGame
 import com.unciv.logic.IdChecker
 import com.unciv.logic.civilization.PlayerType
+import com.unciv.logic.files.MapSaver
+import com.unciv.logic.map.MapGeneratedMainType
 import com.unciv.logic.multiplayer.FriendList
 import com.unciv.models.metadata.GameParameters
 import com.unciv.models.metadata.GameSetupInfo
@@ -16,18 +18,18 @@ import com.unciv.models.metadata.Player
 import com.unciv.models.ruleset.Ruleset
 import com.unciv.models.ruleset.nation.Nation
 import com.unciv.models.translations.tr
-import com.unciv.ui.components.input.KeyCharAndCode
 import com.unciv.ui.components.UncivTextField
-import com.unciv.ui.components.widgets.WrappableLabel
 import com.unciv.ui.components.extensions.darken
 import com.unciv.ui.components.extensions.isEnabled
-import com.unciv.ui.components.input.keyShortcuts
-import com.unciv.ui.components.input.onActivation
-import com.unciv.ui.components.input.onClick
 import com.unciv.ui.components.extensions.setFontColor
 import com.unciv.ui.components.extensions.surroundWithCircle
 import com.unciv.ui.components.extensions.toLabel
 import com.unciv.ui.components.extensions.toTextButton
+import com.unciv.ui.components.input.KeyCharAndCode
+import com.unciv.ui.components.input.keyShortcuts
+import com.unciv.ui.components.input.onActivation
+import com.unciv.ui.components.input.onClick
+import com.unciv.ui.components.widgets.WrappableLabel
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.popups.Popup
 import com.unciv.ui.screens.basescreen.BaseScreen
@@ -49,6 +51,7 @@ import com.unciv.ui.components.widgets.AutoScrollPane as ScrollPane
 class PlayerPickerTable(
     val previousScreen: IPreviousScreen,
     var gameParameters: GameParameters,
+    var gameSetupInfo: GameSetupInfo,
     blockWidth: Float = 0f
 ): Table() {
     val playerListTable = Table()
@@ -114,7 +117,27 @@ class PlayerPickerTable(
                     gameParameters.players.add(player)
                     update()
                 }
-            playerListTable.add(addPlayerButton).pad(10f)
+            playerListTable.add(addPlayerButton).pad(10f).row()
+        }
+
+        if (gameSetupInfo.mapParameters.type == MapGeneratedMainType.custom) {
+
+            val populateCivListButton =
+                "Add civilizations with defined starting locations".toTextButton()
+                .onClick {
+                    if (gameSetupInfo.mapFile != null) {
+                        val startingLocations = MapSaver.loadMap(gameSetupInfo.mapFile!!).startingLocations
+                        val nationsWithStartingLocations = ArrayList<String>()
+
+                        startingLocations.forEach {
+                            nationsWithStartingLocations.add(it.nation)
+                        }
+
+
+                    }
+                }
+
+            playerListTable.add(populateCivListButton).pad(10f).row()
         }
 
         // enable start game when at least one human player and they're not alone
