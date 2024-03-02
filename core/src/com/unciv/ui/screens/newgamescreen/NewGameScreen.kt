@@ -77,7 +77,8 @@ class NewGameScreen(
         newGameOptionsTable = GameOptionsTable(
             this, isPortrait,
             updatePlayerPickerTable = { desiredCiv -> playerPickerTable.update(desiredCiv) },
-            updatePlayerPickerRandomLabel = { playerPickerTable.updateRandomNumberLabel() }
+            updatePlayerPickerRandomLabel = { playerPickerTable.updateRandomNumberLabel() },
+            newGameScreen = this
         )
         mapOptionsTable = MapOptionsTable(this, isReset)
         closeButton.onActivation {

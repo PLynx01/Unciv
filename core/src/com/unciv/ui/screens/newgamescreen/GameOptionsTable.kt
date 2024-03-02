@@ -8,6 +8,8 @@ import com.badlogic.gdx.utils.Align
 import com.unciv.Constants
 import com.unciv.UncivGame
 import com.unciv.logic.civilization.PlayerType
+import com.unciv.logic.files.MapSaver
+import com.unciv.logic.map.MapGeneratedMainType
 import com.unciv.models.metadata.BaseRuleset
 import com.unciv.models.metadata.GameParameters
 import com.unciv.models.metadata.Player
@@ -39,11 +41,15 @@ class GameOptionsTable(
     private val previousScreen: IPreviousScreen,
     private val isPortrait: Boolean = false,
     private val updatePlayerPickerTable: (desiredCiv: String) -> Unit,
-    private val updatePlayerPickerRandomLabel: () -> Unit
+    private val updatePlayerPickerRandomLabel: () -> Unit,
+    private val newGameScreen: NewGameScreen
 ) : Table(BaseScreen.skin) {
     var gameParameters = previousScreen.gameSetupInfo.gameParameters
+    var mapParameters = previousScreen.gameSetupInfo.mapParameters
     val ruleset = previousScreen.ruleset
     var locked = false
+
+    private var gameSetupInfo = previousScreen.gameSetupInfo
 
     /** Holds the UI for the Extension Mods
      *
@@ -61,7 +67,10 @@ class GameOptionsTable(
     private var baseRulesetSelectBox: TranslatedSelectBox? = null
 
     init {
-        background = BaseScreen.skinStrings.getUiBackground("NewGameScreen/GameOptionsTable", tintColor = BaseScreen.skinStrings.skinConfig.clearColor)
+        background = BaseScreen.skinStrings.getUiBackground(
+            "NewGameScreen/GameOptionsTable",
+            tintColor = BaseScreen.skinStrings.skinConfig.clearColor
+        )
         top()
         defaults().pad(5f)
         update()
@@ -90,7 +99,21 @@ class GameOptionsTable(
                     addCityStatesSlider()
                 }
             }).colspan(2).fillX().row()
+
+            if (mapParameters.type == MapGeneratedMainType.custom) {
+                addStartingLocationsMode()
+            }
+
+            if (mapParameters.type == MapGeneratedMainType.custom
+                && gameParameters.specifiedStartingLocationsMode
+            ) {
+                // Add populate list button
+                addPopulateCivListButton()
+
+            }
         }).row()
+
+
         addVictoryTypeCheckboxes()
 
         val checkboxTable = Table().apply { defaults().left().pad(2.5f) }
@@ -142,41 +165,52 @@ class GameOptionsTable(
     }
 
     private fun Table.addNoCityRazingCheckbox() =
-            addCheckbox("No City Razing", gameParameters.noCityRazing)
-            { gameParameters.noCityRazing = it }
+        addCheckbox("No City Razing", gameParameters.noCityRazing)
+        { gameParameters.noCityRazing = it }
 
     private fun Table.addNoBarbariansCheckbox() =
-            addCheckbox("No Barbarians", gameParameters.noBarbarians)
-            { gameParameters.noBarbarians = it }
+        addCheckbox("No Barbarians", gameParameters.noBarbarians)
+        { gameParameters.noBarbarians = it }
 
     private fun Table.addRagingBarbariansCheckbox() =
-            addCheckbox("Raging Barbarians", gameParameters.ragingBarbarians)
-            { gameParameters.ragingBarbarians = it }
+        addCheckbox("Raging Barbarians", gameParameters.ragingBarbarians)
+        { gameParameters.ragingBarbarians = it }
 
     private fun Table.addOneCityChallengeCheckbox() =
-            addCheckbox("One City Challenge", gameParameters.oneCityChallenge)
-            { gameParameters.oneCityChallenge = it }
+        addCheckbox("One City Challenge", gameParameters.oneCityChallenge)
+        { gameParameters.oneCityChallenge = it }
 
     private fun Table.addNuclearWeaponsCheckbox() =
-            addCheckbox("Enable Nuclear Weapons", gameParameters.nuclearWeaponsEnabled)
-            { gameParameters.nuclearWeaponsEnabled = it }
+        addCheckbox("Enable Nuclear Weapons", gameParameters.nuclearWeaponsEnabled)
+        { gameParameters.nuclearWeaponsEnabled = it }
+
+    private fun Table.addStartingLocationsMode() =
+        addCheckbox(
+            "Specified Starting Locations Mode",
+            gameParameters.specifiedStartingLocationsMode
+        )
+        {
+            gameParameters.specifiedStartingLocationsMode = it
+            update()
+        }
+
 
     private fun Table.addIsOnlineMultiplayerCheckbox() =
-            addCheckbox("Online Multiplayer", gameParameters.isOnlineMultiplayer)
-            { shouldUseMultiplayer ->
-                gameParameters.isOnlineMultiplayer = shouldUseMultiplayer
-                updatePlayerPickerTable("")
-                if (shouldUseMultiplayer) {
-                    MultiplayerHelpers.showDropboxWarning(previousScreen as BaseScreen)
-                }
-                update()
+        addCheckbox("Online Multiplayer", gameParameters.isOnlineMultiplayer)
+        { shouldUseMultiplayer ->
+            gameParameters.isOnlineMultiplayer = shouldUseMultiplayer
+            updatePlayerPickerTable("")
+            if (shouldUseMultiplayer) {
+                MultiplayerHelpers.showDropboxWarning(previousScreen as BaseScreen)
             }
+            update()
+        }
 
     private fun Table.addAnyoneCanSpectateCheckbox() =
-            addCheckbox("Allow anyone to spectate", gameParameters.anyoneCanSpectate)
-            {
-                gameParameters.anyoneCanSpectate = it
-            }
+        addCheckbox("Allow anyone to spectate", gameParameters.anyoneCanSpectate)
+        {
+            gameParameters.anyoneCanSpectate = it
+        }
 
     private fun Table.addEnableEspionageCheckbox() =
         addCheckbox("Enable Espionage", gameParameters.espionageEnabled)
@@ -216,51 +250,52 @@ class GameOptionsTable(
     }
 
     private fun Table.addNoStartBiasCheckbox() =
-            addCheckbox("Disable starting bias", gameParameters.noStartBias)
-            { gameParameters.noStartBias = it }
+        addCheckbox("Disable starting bias", gameParameters.noStartBias)
+        { gameParameters.noStartBias = it }
 
     private fun Table.addRandomPlayersCheckbox() =
-            addCheckbox("Random number of Civilizations", gameParameters.randomNumberOfPlayers)
-            { newRandomNumberOfPlayers ->
-                gameParameters.randomNumberOfPlayers = newRandomNumberOfPlayers
-                if (newRandomNumberOfPlayers) {
-                    // remove all random AI from player picker
-                    gameParameters.players = gameParameters.players.asSequence()
-                        .filterNot { it.playerType == PlayerType.AI && it.chosenCiv == Constants.random }
-                        .toCollection(ArrayList(gameParameters.players.size))
-                    updatePlayerPickerTable("")
-                } else {
-                    // Fill up player picker with random AI until previously active min reached
-                    val additionalRandom = gameParameters.minNumberOfPlayers - gameParameters.players.size
-                    if (additionalRandom > 0) {
-                        repeat(additionalRandom) {
-                            gameParameters.players.add(Player(Constants.random))
-                        }
-                        updatePlayerPickerTable("")
+        addCheckbox("Random number of Civilizations", gameParameters.randomNumberOfPlayers)
+        { newRandomNumberOfPlayers ->
+            gameParameters.randomNumberOfPlayers = newRandomNumberOfPlayers
+            if (newRandomNumberOfPlayers) {
+                // remove all random AI from player picker
+                gameParameters.players = gameParameters.players.asSequence()
+                    .filterNot { it.playerType == PlayerType.AI && it.chosenCiv == Constants.random }
+                    .toCollection(ArrayList(gameParameters.players.size))
+                updatePlayerPickerTable("")
+            } else {
+                // Fill up player picker with random AI until previously active min reached
+                val additionalRandom =
+                    gameParameters.minNumberOfPlayers - gameParameters.players.size
+                if (additionalRandom > 0) {
+                    repeat(additionalRandom) {
+                        gameParameters.players.add(Player(Constants.random))
                     }
+                    updatePlayerPickerTable("")
                 }
-                update()  // To see the new sliders
             }
+            update()  // To see the new sliders
+        }
 
     private fun Table.addRandomCityStatesCheckbox() =
-            addCheckbox("Random number of City-States", gameParameters.randomNumberOfCityStates)
-            {
-                gameParameters.run {
-                    randomNumberOfCityStates = it
-                    if (it) {
-                        if (numberOfCityStates > maxNumberOfCityStates)
-                            maxNumberOfCityStates = numberOfCityStates
-                        if (numberOfCityStates < minNumberOfCityStates)
-                            minNumberOfCityStates = numberOfCityStates
-                    } else {
-                        if (numberOfCityStates > maxNumberOfCityStates)
-                            numberOfCityStates = maxNumberOfCityStates
-                        if (numberOfCityStates < minNumberOfCityStates)
-                            numberOfCityStates = minNumberOfCityStates
-                    }
+        addCheckbox("Random number of City-States", gameParameters.randomNumberOfCityStates)
+        {
+            gameParameters.run {
+                randomNumberOfCityStates = it
+                if (it) {
+                    if (numberOfCityStates > maxNumberOfCityStates)
+                        maxNumberOfCityStates = numberOfCityStates
+                    if (numberOfCityStates < minNumberOfCityStates)
+                        minNumberOfCityStates = numberOfCityStates
+                } else {
+                    if (numberOfCityStates > maxNumberOfCityStates)
+                        numberOfCityStates = maxNumberOfCityStates
+                    if (numberOfCityStates < minNumberOfCityStates)
+                        numberOfCityStates = minNumberOfCityStates
                 }
-                update()  // To see the changed sliders
             }
+            update()  // To see the changed sliders
+        }
 
     private fun Table.addLinkedMinMaxSliders(
         minValue: Int, maxValue: Int,
@@ -272,7 +307,12 @@ class GameOptionsTable(
         if (maxValue < minValue) return
 
         lateinit var maxSlider: UncivSlider  // lateinit safe because the closure won't use it until the user operates a slider
-        val minSlider = UncivSlider(minValue.toFloat(), maxValue.toFloat(), 1f, initial = minField.get().toFloat()) {
+        val minSlider = UncivSlider(
+            minValue.toFloat(),
+            maxValue.toFloat(),
+            1f,
+            initial = minField.get().toFloat()
+        ) {
             val newMin = it.toInt()
             minField.set(newMin)
             if (newMin > maxSlider.value.toInt()) {
@@ -282,7 +322,12 @@ class GameOptionsTable(
             onChangeCallback?.invoke()
         }
         minSlider.isDisabled = locked
-        maxSlider = UncivSlider(minValue.toFloat(), maxValue.toFloat(), 1f, initial = maxField.get().toFloat()) {
+        maxSlider = UncivSlider(
+            minValue.toFloat(),
+            maxValue.toFloat(),
+            1f,
+            initial = maxField.get().toFloat()
+        ) {
             val newMax = it.toInt()
             maxField.set(newMax)
             if (newMax < minSlider.value.toInt()) {
@@ -300,7 +345,8 @@ class GameOptionsTable(
     }
 
     private fun Table.addMinMaxPlayersSliders() {
-        addLinkedMinMaxSliders(2, numberOfMajorCivs(),
+        addLinkedMinMaxSliders(
+            2, numberOfMajorCivs(),
             "{Min number of Civilizations}:", "{Max number of Civilizations}:",
             gameParameters::minNumberOfPlayers, gameParameters::maxNumberOfPlayers,
             updatePlayerPickerRandomLabel
@@ -308,7 +354,8 @@ class GameOptionsTable(
     }
 
     private fun Table.addMinMaxCityStatesSliders() {
-        addLinkedMinMaxSliders( 0, numberOfCityStates(),
+        addLinkedMinMaxSliders(
+            0, numberOfCityStates(),
             "{Min number of City-States}:", "{Max number of City-States}:",
             gameParameters::minNumberOfCityStates, gameParameters::maxNumberOfCityStates
         )
@@ -319,7 +366,12 @@ class GameOptionsTable(
         if (cityStatesAvailable == 0) return
 
         add("{City-States}:".toLabel()).left().expandX()
-        val slider = UncivSlider(0f, cityStatesAvailable.toFloat(), 1f, initial = gameParameters.numberOfCityStates.toFloat()) {
+        val slider = UncivSlider(
+            0f,
+            cityStatesAvailable.toFloat(),
+            1f,
+            initial = gameParameters.numberOfCityStates.toFloat()
+        ) {
             gameParameters.numberOfCityStates = it.toInt()
         }
         slider.isDisabled = locked
@@ -335,12 +387,37 @@ class GameOptionsTable(
             gameParameters.maxTurns = it.toInt()
         }
         slider.isDisabled = locked
-        val snapValues = floatArrayOf(100f,150f,200f,250f,300f,350f,400f,450f,500f,550f,600f,650f,700f,750f,800f,900f,1000f,1250f,1500f)
+        val snapValues = floatArrayOf(
+            100f,
+            150f,
+            200f,
+            250f,
+            300f,
+            350f,
+            400f,
+            450f,
+            500f,
+            550f,
+            600f,
+            650f,
+            700f,
+            750f,
+            800f,
+            900f,
+            1000f,
+            1250f,
+            1500f
+        )
         slider.setSnapToValues(threshold = 125f, *snapValues)
         return slider
     }
 
-    private fun Table.addSelectBox(text: String, values: Collection<String>, initialState: String, onChange: (newValue: String) -> String?): TranslatedSelectBox {
+    private fun Table.addSelectBox(
+        text: String,
+        values: Collection<String>,
+        initialState: String,
+        onChange: (newValue: String) -> String?
+    ): TranslatedSelectBox {
         add(text.toLabel(hideIcons = true)).left()
         val selectBox = TranslatedSelectBox(values, initialState, BaseScreen.skin)
         selectBox.isDisabled = locked
@@ -388,7 +465,12 @@ class GameOptionsTable(
 
         val sortedBaseRulesets = RulesetCache.getSortedBaseRulesets()
         if (sortedBaseRulesets.size < 2) return
-        baseRulesetSelectBox = addSelectBox("{Base Ruleset}:", sortedBaseRulesets, gameParameters.baseRuleset, ::onBaseRulesetSelected)
+        baseRulesetSelectBox = addSelectBox(
+            "{Base Ruleset}:",
+            sortedBaseRulesets,
+            gameParameters.baseRuleset,
+            ::onBaseRulesetSelected
+        )
     }
 
     private fun Table.addGameSpeedSelectBox() {
@@ -409,17 +491,18 @@ class GameOptionsTable(
         // Create a checkbox for each VictoryType existing
         val victoryConditionsTable = Table().apply { defaults().pad(5f) }
         for ((i, victoryType) in ruleset.victories.values.withIndex()) {
-            val victoryCheckbox = victoryType.name.toCheckBox(gameParameters.victoryTypes.contains(victoryType.name)) {
-                // If the checkbox is checked, adds the victoryTypes else remove it
-                if (it) {
-                    gameParameters.victoryTypes.add(victoryType.name)
-                } else {
-                    gameParameters.victoryTypes.remove(victoryType.name)
+            val victoryCheckbox =
+                victoryType.name.toCheckBox(gameParameters.victoryTypes.contains(victoryType.name)) {
+                    // If the checkbox is checked, adds the victoryTypes else remove it
+                    if (it) {
+                        gameParameters.victoryTypes.add(victoryType.name)
+                    } else {
+                        gameParameters.victoryTypes.remove(victoryType.name)
+                    }
+                    // show or hide the max turns select box
+                    if (victoryType.enablesMaxTurns())
+                        update()
                 }
-                // show or hide the max turns select box
-                if (victoryType.enablesMaxTurns())
-                    update()
-            }
             victoryCheckbox.name = victoryType.name
             victoryCheckbox.isDisabled = locked
             victoryConditionsTable.add(victoryCheckbox).left()
@@ -427,6 +510,18 @@ class GameOptionsTable(
         }
         add(victoryConditionsTable).colspan(2).row()
     }
+
+    private fun Table.addPopulateCivListButton() {
+
+        val populateCivListButton =
+            "Add civilizations with defined starting locations".toTextButton()
+                .onClick {
+                    autoFillPlayerList()
+                }
+
+        add(populateCivListButton).colspan(2).row()
+    }
+
 
     fun resetRuleset() {
         val rulesetName = BaseRuleset.Civ_V_GnK.fullName
@@ -450,7 +545,12 @@ class GameOptionsTable(
     }
 
     private fun getModCheckboxes(isPortrait: Boolean = false): ModCheckboxTable {
-        return ModCheckboxTable(gameParameters.mods, gameParameters.baseRuleset, previousScreen as BaseScreen, isPortrait) {
+        return ModCheckboxTable(
+            gameParameters.mods,
+            gameParameters.baseRuleset,
+            previousScreen as BaseScreen,
+            isPortrait
+        ) {
             onChooseMod(it)
         }
     }
@@ -469,11 +569,58 @@ class GameOptionsTable(
                 desiredCiv = modNations.random().name
 
             val music = UncivGame.Current.musicController
-            if (!music.chooseTrack(mod, MusicMood.Theme, MusicTrackChooserFlags.setSelectNation) && desiredCiv.isNotEmpty())
-                music.chooseTrack(desiredCiv, MusicMood.themeOrPeace, MusicTrackChooserFlags.setSelectNation)
+            if (!music.chooseTrack(
+                    mod,
+                    MusicMood.Theme,
+                    MusicTrackChooserFlags.setSelectNation
+                ) && desiredCiv.isNotEmpty()
+            )
+                music.chooseTrack(
+                    desiredCiv,
+                    MusicMood.themeOrPeace,
+                    MusicTrackChooserFlags.setSelectNation
+                )
         }
 
         updatePlayerPickerTable(desiredCiv)
+    }
+
+    private fun autoFillPlayerList() {
+        if (gameSetupInfo.mapFile != null) {
+            val startingLocations = MapSaver.loadMap(gameSetupInfo.mapFile!!).startingLocations
+            val nationsWithStartingLocations = ArrayList<Nation>()
+
+            // Get nations with starting locations
+            startingLocations.forEach {
+                val nation = ruleset.nations[it.nation]
+
+                if (nation != null) {
+                    nationsWithStartingLocations.add(nation)
+                }
+            }
+
+            nationsWithStartingLocations.sortBy { it.name }
+
+            val humanPlayers = ArrayList(gameParameters.players.filter {
+                it.playerType == PlayerType.Human
+            })
+
+            gameParameters.players = humanPlayers
+
+            // Add nations
+            nationsWithStartingLocations.forEach {
+                if (it.isMajorCiv) {
+                    val playerToAdd = Player(it.name, PlayerType.AI)
+                    gameParameters.players.add(playerToAdd)
+                }
+            }
+
+            // Remove duplicate nations
+            gameParameters.players =
+                ArrayList(gameParameters.players.distinctBy { player -> player.chosenCiv })
+
+            newGameScreen.updateTables()
+        }
     }
 }
 

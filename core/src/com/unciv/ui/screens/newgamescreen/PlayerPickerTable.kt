@@ -9,8 +9,6 @@ import com.unciv.Constants
 import com.unciv.UncivGame
 import com.unciv.logic.IdChecker
 import com.unciv.logic.civilization.PlayerType
-import com.unciv.logic.files.MapSaver
-import com.unciv.logic.map.MapGeneratedMainType
 import com.unciv.logic.multiplayer.FriendList
 import com.unciv.models.metadata.GameParameters
 import com.unciv.models.metadata.GameSetupInfo
@@ -120,25 +118,6 @@ class PlayerPickerTable(
             playerListTable.add(addPlayerButton).pad(10f).row()
         }
 
-        if (gameSetupInfo.mapParameters.type == MapGeneratedMainType.custom) {
-
-            val populateCivListButton =
-                "Add civilizations with defined starting locations".toTextButton()
-                .onClick {
-                    if (gameSetupInfo.mapFile != null) {
-                        val startingLocations = MapSaver.loadMap(gameSetupInfo.mapFile!!).startingLocations
-                        val nationsWithStartingLocations = ArrayList<String>()
-
-                        startingLocations.forEach {
-                            nationsWithStartingLocations.add(it.nation)
-                        }
-
-
-                    }
-                }
-
-            playerListTable.add(populateCivListButton).pad(10f).row()
-        }
 
         // enable start game when at least one human player and they're not alone
         val humanPlayerCount = gameParameters.players.count { it.playerType == PlayerType.Human }

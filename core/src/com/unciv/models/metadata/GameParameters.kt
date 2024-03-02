@@ -20,6 +20,8 @@ class GameParameters : IsPartOfGameInfoSerialization { // Default values are the
     var maxNumberOfCityStates = 6
     var numberOfCityStates = 6
 
+    var specifiedStartingLocationsMode = false
+
     var enableRandomNationsPool = false
     var randomNationsPool = arrayListOf<String>()
 
