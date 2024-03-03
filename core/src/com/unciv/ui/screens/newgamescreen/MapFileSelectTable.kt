@@ -4,12 +4,14 @@ import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.scenes.scene2d.Group
 import com.badlogic.gdx.scenes.scene2d.actions.Actions
 import com.badlogic.gdx.scenes.scene2d.ui.Container
+import com.badlogic.gdx.scenes.scene2d.ui.Label
 import com.badlogic.gdx.scenes.scene2d.ui.SelectBox
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.unciv.UncivGame
 import com.unciv.logic.files.MapSaver
 import com.unciv.logic.map.MapParameters
 import com.unciv.models.ruleset.RulesetCache
+import com.unciv.models.ruleset.nation.Nation
 import com.unciv.ui.components.extensions.pad
 import com.unciv.ui.components.extensions.toLabel
 import com.unciv.ui.components.input.onChange
@@ -144,6 +146,7 @@ class MapFileSelectTable(
         newGameScreen.updateTables()
         hideMiniMap()
         if (success) {
+            displayStartingLocationsCount(mapFile)
             startMapPreview(mapFile)
         } else {
             // Mod error - the options have been reset by updateRuleset
@@ -209,5 +212,64 @@ class MapFileSelectTable(
                 }
             )
         )
+    }
+
+    private fun displayStartingLocationsCount(mapFile: FileHandle) {
+
+        // Remove old labels to avoid duplicating
+        val oldStartingLocationsCountLabel = findActor<Label>("StartingLocationsCountLabel")
+
+        if (oldStartingLocationsCountLabel != null) {
+            removeActor(oldStartingLocationsCountLabel)
+        }
+
+        val oldNationsNotPresentLabel = findActor<Label>("NationsNotPresentLabel")
+
+        if (oldNationsNotPresentLabel != null) {
+            removeActor(oldNationsNotPresentLabel)
+        }
+
+        // Declare ArrayLists with starting locations
+        val startingLocations = MapSaver.loadMap(mapFile).startingLocations
+        val majorCivsWithStartingLocations = ArrayList<Nation>()
+        val cityStatesWithStartingLocations = ArrayList<Nation>()
+
+        // Populate starting locations list for major civs and city-states
+        startingLocations.forEach {
+            val nation = newGameScreen.ruleset.nations[it.nation]
+
+            if (nation != null) {
+                if (nation.isMajorCiv) {
+                    majorCivsWithStartingLocations.add(nation)
+                }
+                else if (nation.isCityState) {
+                    cityStatesWithStartingLocations.add(nation)
+                }
+            }
+        }
+
+        // Get number of starting locations
+        val startingLocationsCount = startingLocations.size
+        val majorCivLocationsCount = majorCivsWithStartingLocations.size
+        val cityStateLocationsCount = cityStatesWithStartingLocations.size
+
+        // Create the new string and label
+        val startingLocationsCountString =
+            "$startingLocationsCount starting locations ($majorCivLocationsCount major civs, $cityStateLocationsCount city-states\npresent in selected ruleset)"
+        val newStartingLocationsCountLabel = startingLocationsCountString.toLabel()
+        newStartingLocationsCountLabel.name = "StartingLocationsCountLabel"
+
+        add(newStartingLocationsCountLabel).colspan(2).row()
+
+        if (majorCivLocationsCount + cityStateLocationsCount < startingLocationsCount) {
+            val notPresentNationsCount = startingLocationsCount - (majorCivLocationsCount + cityStateLocationsCount)
+            val nationsNotPresentString = "$notPresentNationsCount nations are not present in selected ruleset"
+            val newNationsNotPresentLabel = nationsNotPresentString.toLabel()
+            newNationsNotPresentLabel.name = "NationsNotPresentLabel"
+
+            add(newNationsNotPresentLabel).colspan(2).row()
+        }
+
+
     }
 }
