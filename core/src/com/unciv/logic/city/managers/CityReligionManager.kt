@@ -57,9 +57,9 @@ class CityReligionManager : IsPartOfGameInfoSerialization {
         getAffectedBySurroundingCities()
     }
 
-    fun getUniques(): Sequence<Unique> {
-        val majorityReligion = getMajorityReligion() ?: return sequenceOf()
-        return majorityReligion.getFollowerUniques()
+    fun getUniques(uniqueType: UniqueType): Sequence<Unique> {
+        val majorityReligion = getMajorityReligion() ?: return emptySequence()
+        return majorityReligion.followerBeliefUniqueMap.getUniques(uniqueType)
     }
 
 
@@ -112,12 +112,9 @@ class CityReligionManager : IsPartOfGameInfoSerialization {
         if (newMajorityReligion in religionsAtSomePointAdopted) return
 
         val religionOwningCiv = newMajorityReligionObject.getFounder()
-        if (religionOwningCiv.hasUnique(UniqueType.StatsWhenAdoptingReligionSpeed) || religionOwningCiv.hasUnique(UniqueType.StatsWhenAdoptingReligion)) {
+        if (religionOwningCiv.hasUnique(UniqueType.StatsWhenAdoptingReligion)) {
             val statsGranted =
-                (
-                    religionOwningCiv.getMatchingUniques(UniqueType.StatsWhenAdoptingReligionSpeed)
-                    + religionOwningCiv.getMatchingUniques(UniqueType.StatsWhenAdoptingReligion)
-                ).map { it.stats }
+                religionOwningCiv.getMatchingUniques(UniqueType.StatsWhenAdoptingReligion).map { it.stats.times(if (!it.isModifiedByGameSpeed()) 1f else city.civ.gameInfo.speed.modifier) }
                 .reduce { acc, stats -> acc + stats }
 
             for ((key, value) in statsGranted)
@@ -237,7 +234,8 @@ class CityReligionManager : IsPartOfGameInfoSerialization {
     }
 
     fun getMajorityReligion(): Religion? {
-        return city.civ.gameInfo.religions[getMajorityReligionName()]
+        val majorityReligionName = getMajorityReligionName() ?: return null
+        return city.civ.gameInfo.religions[majorityReligionName]
     }
 
     private fun getAffectedBySurroundingCities() {
@@ -269,8 +267,9 @@ class CityReligionManager : IsPartOfGameInfoSerialization {
             spreadRange += unique.params[0].toInt()
         }
 
-        if (getMajorityReligion() != null) {
-            for (unique in getMajorityReligion()!!.getFounder().getMatchingUniques(UniqueType.ReligionSpreadDistance))
+        val majorityReligion = getMajorityReligion()
+        if (majorityReligion != null) {
+            for (unique in majorityReligion.getFounder().getMatchingUniques(UniqueType.ReligionSpreadDistance))
                 spreadRange += unique.params[0].toInt()
         }
 

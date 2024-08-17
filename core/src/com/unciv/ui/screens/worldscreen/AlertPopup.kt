@@ -15,29 +15,21 @@ import com.unciv.logic.civilization.LocationAction
 import com.unciv.logic.civilization.NotificationCategory
 import com.unciv.logic.civilization.NotificationIcon
 import com.unciv.logic.civilization.PopupAlert
-import com.unciv.logic.civilization.diplomacy.DiplomacyFlags
-import com.unciv.logic.civilization.diplomacy.DiplomaticModifiers
-import com.unciv.logic.civilization.diplomacy.RelationshipLevel
-import com.unciv.models.ruleset.EventChoice
-import com.unciv.models.ruleset.unique.StateForConditionals
+import com.unciv.logic.civilization.diplomacy.*
 import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.models.translations.fillPlaceholders
 import com.unciv.models.translations.tr
 import com.unciv.ui.audio.MusicMood
 import com.unciv.ui.audio.MusicTrackChooserFlags
-import com.unciv.ui.components.UncivTooltip.Companion.addTooltip
 import com.unciv.ui.components.extensions.disable
 import com.unciv.ui.components.extensions.pad
 import com.unciv.ui.components.extensions.toLabel
 import com.unciv.ui.components.extensions.toTextButton
-import com.unciv.ui.components.input.KeyCharAndCode
 import com.unciv.ui.components.input.KeyboardBinding
 import com.unciv.ui.components.input.keyShortcuts
 import com.unciv.ui.components.input.onActivation
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.popups.Popup
-import com.unciv.ui.screens.civilopediascreen.FormattedLine
-import com.unciv.ui.screens.civilopediascreen.MarkupRenderer
 import com.unciv.ui.screens.diplomacyscreen.LeaderIntroTable
 import com.unciv.ui.screens.victoryscreen.VictoryScreen
 import java.util.EnumSet
@@ -100,13 +92,15 @@ class AlertPopup(
             AlertType.BorderConflict -> addBorderConflict()
             AlertType.DemandToStopSettlingCitiesNear -> addDemandToStopSettlingCitiesNear()
             AlertType.CitySettledNearOtherCivDespiteOurPromise -> addCitySettledNearOtherCivDespiteOurPromise()
+            AlertType.DemandToStopSpreadingReligion -> addDemandToStopSpreadingReligion()
+            AlertType.ReligionSpreadDespiteOurPromise -> addReligionSpreadDespiteOurPromise()
             AlertType.WonderBuilt -> addWonderBuilt()
             AlertType.TechResearched -> addTechResearched()
             AlertType.GoldenAge -> addGoldenAge()
             AlertType.DeclarationOfFriendship -> addDeclarationOfFriendship()
             AlertType.StartIntro -> addStartIntro()
             AlertType.DiplomaticMarriage -> addDiplomaticMarriage()
-            AlertType.BulliedProtectedMinor, AlertType.AttackedProtectedMinor -> addBulliedOrAttackedProtectedMinor()
+            AlertType.BulliedProtectedMinor, AlertType.AttackedProtectedMinor, AlertType.AttackedAllyMinor -> addBulliedOrAttackedProtectedOrAlliedMinor()
             AlertType.RecapturedCivilian -> skipThisAlert = addRecapturedCivilian()
             AlertType.GameHasBeenWon -> addGameHasBeenWon()
             AlertType.Event -> skipThisAlert = !addEvent()
@@ -124,29 +118,37 @@ class AlertPopup(
         addCloseButton("Never!", KeyboardBinding.Cancel)
     }
 
-    private fun addBulliedOrAttackedProtectedMinor() {
+    private fun addBulliedOrAttackedProtectedOrAlliedMinor() {
         val involvedCivs = popupAlert.value.split('@')
         val bullyOrAttacker = getCiv(involvedCivs[0])
         val cityState = getCiv(involvedCivs[1])
         val player = viewingCiv
         addLeaderName(bullyOrAttacker)
 
-        val isAtLeastNeutral = bullyOrAttacker.getDiplomacyManager(player).isRelationshipLevelGE(RelationshipLevel.Neutral)
+        val isAtLeastNeutral = bullyOrAttacker.getDiplomacyManager(player)!!.isRelationshipLevelGE(RelationshipLevel.Neutral)
         val text = when {
             popupAlert.type == AlertType.BulliedProtectedMinor && isAtLeastNeutral ->  // Nice message
                 "I've been informed that my armies have taken tribute from [${cityState.civName}], a city-state under your protection.\nI assure you, this was quite unintentional, and I hope that this does not serve to drive us apart."
             popupAlert.type == AlertType.BulliedProtectedMinor ->  // Nasty message
                 "We asked [${cityState.civName}] for a tribute recently and they gave in.\nYou promised to protect them from such things, but we both know you cannot back that up."
             isAtLeastNeutral ->  // Nice message
-                "It's come to my attention that I may have attacked [${cityState.civName}], a city-state under your protection.\nWhile it was not my goal to be at odds with your empire, this was deemed a necessary course of action."
+                "It's come to my attention that I may have attacked [${cityState.civName}].\nWhile it was not my goal to be at odds with your empire, this was deemed a necessary course of action."
             else ->  // Nasty message
                 "I thought you might like to know that I've launched an invasion of one of your little pet states.\nThe lands of [${cityState.civName}] will make a fine addition to my own."
         }
         addGoodSizedLabel(text).row()
 
-        addCloseButton("You'll pay for this!", KeyboardBinding.Confirm) {
-            player.getDiplomacyManager(bullyOrAttacker).sideWithCityState()
+        addCloseButton("THIS MEANS WAR!", KeyboardBinding.Confirm) {
+            player.getDiplomacyManager(bullyOrAttacker)!!.sideWithCityState()
+            val warReason = if (popupAlert.type == AlertType.AttackedAllyMinor) WarType.AlliedCityStateWar else WarType.ProtectedCityStateWar
+            player.getDiplomacyManager(bullyOrAttacker)!!.declareWar(DeclareWarReason(warReason, cityState))
+            cityState.getDiplomacyManager(player)!!.influence += 20f // You went to war for us!!
         }.row()
+
+        addCloseButton("You'll pay for this!", KeyboardBinding.Confirm) {
+            player.getDiplomacyManager(bullyOrAttacker)!!.sideWithCityState()
+        }.row()
+
         addCloseButton("Very well.", KeyboardBinding.Cancel) {
             player.addNotification("You have broken your Pledge to Protect [${cityState.civName}]!",
                 cityState.cityStateFunctions.getNotificationActions(), NotificationCategory.Diplomacy, cityState.civName)
@@ -208,7 +210,7 @@ class AlertPopup(
 
     private fun addDeclarationOfFriendship() {
         val otherciv = getCiv(popupAlert.value)
-        val playerDiploManager = viewingCiv.getDiplomacyManager(otherciv)
+        val playerDiploManager = viewingCiv.getDiplomacyManager(otherciv)!!
         addLeaderName(otherciv)
         addGoodSizedLabel("My friend, shall we declare our friendship to the world?").row()
         addCloseButton("We are not interested.", KeyboardBinding.Cancel) {
@@ -230,7 +232,7 @@ class AlertPopup(
 
     private fun addDemandToStopSettlingCitiesNear() {
         val otherciv = getCiv(popupAlert.value)
-        val playerDiploManager = viewingCiv.getDiplomacyManager(otherciv)
+        val playerDiploManager = viewingCiv.getDiplomacyManager(otherciv)!!
         addLeaderName(otherciv)
         addGoodSizedLabel("Please don't settle new cities near us.").row()
         addCloseButton("Very well, we shall look for new lands to settle.", KeyboardBinding.Confirm) {
@@ -239,6 +241,26 @@ class AlertPopup(
         addCloseButton("We shall do as we please.", KeyboardBinding.Cancel) {
             playerDiploManager.refuseDemandNotToSettleNear()
         }
+    }
+
+    private fun addDemandToStopSpreadingReligion() {
+        val otherciv = getCiv(popupAlert.value)
+        val playerDiploManager = viewingCiv.getDiplomacyManager(otherciv)!!
+        addLeaderName(otherciv)
+        addGoodSizedLabel("Please don't spread religion to us.").row()
+        addCloseButton("Very well, we shall spread our faith elsewhere.", KeyboardBinding.Confirm) {
+            playerDiploManager.agreeNotToSpreadReligionTo()
+        }.row()
+        addCloseButton("We shall do as we please.", KeyboardBinding.Cancel) {
+            playerDiploManager.refuseNotToSpreadReligionTo()
+        }
+    }
+
+    private fun addReligionSpreadDespiteOurPromise() {
+        val otherciv = getCiv(popupAlert.value)
+        addLeaderName(otherciv)
+        addGoodSizedLabel("We noticed you have continued spreading your faith, despite your promise. This will have....consequences.").row()
+        addCloseButton("Very well.")
     }
 
     private fun addDiplomaticMarriage() {
@@ -269,7 +291,7 @@ class AlertPopup(
         addLeaderName(civInfo)
         music.chooseTrack(civInfo.civName, MusicMood.themeOrPeace, MusicTrackChooserFlags.setSpecific)
         music.playVoice("${civInfo.civName}.introduction")
-        if (civInfo.isCityState()) {
+        if (civInfo.isCityState) {
             addGoodSizedLabel("We have encountered the City-State of [${nation.name}]!").row()
             addCloseButton("Excellent!")
         } else {
@@ -312,18 +334,18 @@ class AlertPopup(
             // Return it to original owner
             val unitName = capturedUnit.baseUnit.name
             capturedUnit.destroy()
-            val closestCity =
-                    originalOwner.cities.minByOrNull { it.getCenterTile().aerialDistanceTo(tile) }
+            val closestCity = originalOwner.cities.minByOrNull { it.getCenterTile().aerialDistanceTo(tile) }
+
             if (closestCity != null) {
                 // Attempt to place the unit near their nearest city
                 originalOwner.units.placeUnitNearTile(closestCity.location, unitName)
             }
 
-            if (originalOwner.isCityState()) {
-                originalOwner.getDiplomacyManager(captor).addInfluence(45f)
+            if (originalOwner.isCityState) {
+                originalOwner.getDiplomacyManagerOrMeet(captor).addInfluence(45f)
             } else if (originalOwner.isMajorCiv()) {
                 // No extra bonus from doing it several times
-                originalOwner.getDiplomacyManager(captor)
+                originalOwner.getDiplomacyManagerOrMeet(captor)
                     .setModifier(DiplomaticModifiers.ReturnedCapturedUnits, 20f)
             }
             val notificationSequence = sequence {
@@ -507,18 +529,9 @@ class AlertPopup(
     /** Returns if event was triggered correctly */
     private fun addEvent(): Boolean {
         val event = gameInfo.ruleset.events[popupAlert.value] ?: return false
-
-        val stateForConditionals = StateForConditionals(gameInfo.currentPlayerCiv)
-        val choices = event.getMatchingChoices(stateForConditionals)
-            ?: return false
-
-        if (event.text.isNotEmpty())
-            addGoodSizedLabel(event.text)
-        if (event.civilopediaText.isNotEmpty()) {
-            add(event.renderCivilopediaText(stageWidth * 0.5f, ::openCivilopedia)).row()
-        }
-
-        for (choice in choices) addChoice(choice)
+        val render = RenderEvent(event, worldScreen) { close() }
+        if (!render.isValid) return false
+        add(render).pad(0f).row()
         return true
     }
 
@@ -529,30 +542,4 @@ class AlertPopup(
         worldScreen.shouldUpdate = true
         super.close()
     }
-
-    private fun addChoice(choice: EventChoice) {
-        addSeparator()
-
-        val button = choice.text.toTextButton()
-        button.onActivation {
-            close()
-            choice.triggerChoice(gameInfo.currentPlayerCiv)
-        }
-        val key = KeyCharAndCode.parse(choice.keyShortcut)
-        if (key != KeyCharAndCode.UNKNOWN) {
-            button.keyShortcuts.add(key)
-            button.addTooltip(key)
-        }
-        add(button).row()
-
-        val lines = (
-                choice.civilopediaText.asSequence()
-                + choice.triggeredUniqueObjects.asSequence()
-                    .filterNot { it.isHiddenToUsers() }
-                    .map { FormattedLine(it) }
-            ).asIterable()
-        add(MarkupRenderer.render(lines, stageWidth * 0.5f, linkAction = ::openCivilopedia)).row()
-    }
-
-    private fun openCivilopedia(link: String) = worldScreen.openCivilopedia(link)
 }

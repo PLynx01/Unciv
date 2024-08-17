@@ -15,8 +15,9 @@ import com.unciv.logic.multiplayer.MultiplayerGameNameChanged
 import com.unciv.logic.multiplayer.MultiplayerGameUpdateEnded
 import com.unciv.logic.multiplayer.MultiplayerGameUpdateStarted
 import com.unciv.logic.multiplayer.MultiplayerGameUpdated
-import com.unciv.logic.multiplayer.OnlineMultiplayerGame
+import com.unciv.logic.multiplayer.MultiplayerGame
 import com.unciv.logic.multiplayer.isUsersTurn
+import com.unciv.models.translations.tr
 import com.unciv.ui.components.extensions.setSize
 import com.unciv.ui.components.input.onClick
 import com.unciv.ui.components.widgets.LoadingImage
@@ -29,7 +30,7 @@ import kotlinx.coroutines.delay
 
 class MultiplayerStatusButton(
     screen: BaseScreen,
-    curGame: OnlineMultiplayerGame?
+    curGame: MultiplayerGame?
 ) : Button(BaseScreen.skin), Disposable {
     private var curGameName = curGame?.name
     private val loadingImage = LoadingImage(style = LoadingImage.Style(
@@ -86,7 +87,7 @@ class MultiplayerStatusButton(
     }
 
     /** @return set of gameIds */
-    private fun findGamesToBeNotifiedAbout(games: Iterable<OnlineMultiplayerGame>): MutableSet<String> {
+    private fun findGamesToBeNotifiedAbout(games: Iterable<MultiplayerGame>): MutableSet<String> {
         return games
             .filter { it.name != curGameName }
             .filter { it.preview?.isUsersTurn() == true }
@@ -129,7 +130,7 @@ private class TurnIndicator : HorizontalGroup(), Disposable {
         if (gamesWithUpdates < 2) {
             gameAmount.remove()
         } else {
-            gameAmount.setText(gamesWithUpdates)
+            gameAmount.setText(gamesWithUpdates.tr())
             addActorAt(0, gameAmount)
         }
     }

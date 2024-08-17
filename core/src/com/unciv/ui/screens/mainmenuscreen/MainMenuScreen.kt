@@ -10,11 +10,11 @@ import com.unciv.GUI
 import com.unciv.UncivGame
 import com.unciv.logic.GameInfo
 import com.unciv.logic.GameStarter
+import com.unciv.logic.HolidayDates
 import com.unciv.logic.UncivShowableException
 import com.unciv.logic.map.MapParameters
 import com.unciv.logic.map.MapShape
 import com.unciv.logic.map.MapSize
-import com.unciv.logic.map.MapSizeNew
 import com.unciv.logic.map.MapType
 import com.unciv.logic.map.mapgenerator.MapGenerator
 import com.unciv.models.metadata.BaseRuleset
@@ -42,7 +42,6 @@ import com.unciv.ui.popups.hasOpenPopups
 import com.unciv.ui.popups.popups
 import com.unciv.ui.screens.basescreen.BaseScreen
 import com.unciv.ui.screens.basescreen.RecreateOnResize
-import com.unciv.ui.screens.civilopediascreen.CivilopediaScreen
 import com.unciv.ui.screens.mainmenuscreen.EasterEggRulesets.modifyForEasterEgg
 import com.unciv.ui.screens.mapeditorscreen.EditorMapHolder
 import com.unciv.ui.screens.mapeditorscreen.MapEditorScreen
@@ -121,6 +120,9 @@ class MainMenuScreen: BaseScreen(), RecreateOnResize {
         ImageGetter.ruleset = baseRuleset
 
         if (game.settings.enableEasterEggs) {
+            val holiday = HolidayDates.getHolidayByDate()
+            if (holiday != null)
+                EasterEggFloatingArt(stage, holiday.name)
             val easterEggMod = EasterEggRulesets.getTodayEasterEggRuleset()
             if (easterEggMod != null)
                 easterEggRuleset = RulesetCache.getComplexRuleset(baseRuleset, listOf(easterEggMod))
@@ -226,7 +228,7 @@ class MainMenuScreen: BaseScreen(), RecreateOnResize {
             val newMap = MapGenerator(backgroundMapRuleset, this)
                 .generateMap(MapParameters().apply {
                     shape = MapShape.rectangular
-                    mapSize = MapSizeNew(MapSize.Small)
+                    mapSize = MapSize.Small
                     type = MapType.pangaea
                     temperatureExtremeness = .7f
                     waterThreshold = -0.1f // mainly land, gets about 30% water
@@ -280,8 +282,7 @@ class MainMenuScreen: BaseScreen(), RecreateOnResize {
             val currentGameSetting = GUI.getSettings()
             if (currentTileSet.tileSetName != currentGameSetting.tileSet ||
                     currentTileSet.unitSetName != currentGameSetting.unitSet) {
-                for (screen in game.screenStack.filterIsInstance<WorldScreen>()) screen.dispose()
-                game.screenStack.removeAll { it is WorldScreen }
+                game.removeScreensOfType(WorldScreen::class)
                 QuickSave.autoLoadGame(this)
             } else {
                 GUI.resetToWorldScreen()
@@ -350,7 +351,7 @@ class MainMenuScreen: BaseScreen(), RecreateOnResize {
         UncivGame.Current.translations.translationActiveMods = ruleset.mods
         ImageGetter.setNewRuleset(ruleset)
         setSkin()
-        openCivilopedia(ruleset)
+        openCivilopedia(ruleset, link = link)
     }
 
     override fun recreate(): BaseScreen {

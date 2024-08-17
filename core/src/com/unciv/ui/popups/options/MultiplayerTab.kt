@@ -5,14 +5,13 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.ui.TextField
 import com.unciv.UncivGame
-import com.unciv.logic.multiplayer.OnlineMultiplayer
+import com.unciv.logic.files.IMediaFinder
+import com.unciv.logic.multiplayer.Multiplayer
 import com.unciv.logic.multiplayer.storage.FileStorageRateLimitReached
 import com.unciv.logic.multiplayer.storage.MultiplayerAuthException
-import com.unciv.models.UncivSound
 import com.unciv.models.metadata.GameSettings
 import com.unciv.models.metadata.GameSettings.GameSetting
-import com.unciv.models.ruleset.RulesetCache
-import com.unciv.ui.components.UncivTextField
+import com.unciv.ui.components.widgets.UncivTextField
 import com.unciv.ui.components.extensions.addSeparator
 import com.unciv.ui.components.extensions.brighten
 import com.unciv.ui.components.extensions.format
@@ -76,19 +75,18 @@ fun multiplayerTab(
         turnCheckerSelect = null
     }
 
+    val sounds = IMediaFinder.LabeledSounds().getLabeledSounds()
     addSelectAsSeparateTable(tab, SettingsSelect("Sound notification for when it's your turn in your currently open game:",
-        createNotificationSoundOptions(),
+        sounds,
         GameSetting.MULTIPLAYER_CURRENT_GAME_TURN_NOTIFICATION_SOUND,
         settings
-    )
-    )
+    ))
 
     addSelectAsSeparateTable(tab, SettingsSelect("Sound notification for when it's your turn in any other game:",
-        createNotificationSoundOptions(),
+        sounds,
         GameSetting.MULTIPLAYER_OTHER_GAME_TURN_NOTIFICATION_SOUND,
         settings
-    )
-    )
+    ))
 
     addSeparator(tab)
 
@@ -97,35 +95,6 @@ fun multiplayerTab(
     )
 
     return tab
-}
-
-private fun createNotificationSoundOptions(): List<SelectItem<UncivSound>> = listOf(
-    SelectItem("None", UncivSound.Silent),
-    SelectItem("Notification [1]", UncivSound.Notification1),
-    SelectItem("Notification [2]", UncivSound.Notification2),
-    SelectItem("Chimes", UncivSound.Chimes),
-    SelectItem("Choir", UncivSound.Choir),
-    SelectItem("Buy", UncivSound.Coin),
-    SelectItem("Create", UncivSound.Construction),
-    SelectItem("Fortify", UncivSound.Fortify),
-    SelectItem("Pick a tech", UncivSound.Paper),
-    SelectItem("Adopt policy", UncivSound.Policy),
-    SelectItem("Promote", UncivSound.Promote),
-    SelectItem("Set up", UncivSound.Setup),
-    SelectItem("Swap units", UncivSound.Swap),
-    SelectItem("Upgrade", UncivSound.Upgrade),
-    SelectItem("Bombard", UncivSound.Bombard)
-) + buildUnitAttackSoundOptions()
-
-private fun buildUnitAttackSoundOptions(): List<SelectItem<UncivSound>> {
-    return RulesetCache.getSortedBaseRulesets()
-        .asSequence()
-        .mapNotNull(RulesetCache::get)
-        .flatMap { it.units.values }
-        .filter { it.attackSound != null && it.attackSound != "nuke" } // much too long for a notification
-        .distinctBy { it.attackSound }
-        .map { SelectItem("[${it.name}] Attack Sound", UncivSound(it.attackSound!!)) }
-        .toList()
 }
 
 private fun addMultiplayerServerOptions(
@@ -137,12 +106,12 @@ private fun addMultiplayerServerOptions(
 
     val connectionToServerButton = "Check connection to server".toTextButton()
 
-    val textToShowForMultiplayerAddress = if (OnlineMultiplayer.usesCustomServer()) {
+    val textToShowForOnlineMultiplayerAddress = if (Multiplayer.usesCustomServer()) {
         settings.multiplayer.server
     } else {
         "https://"
     }
-    val multiplayerServerTextField = UncivTextField.create("Server address", textToShowForMultiplayerAddress)
+    val multiplayerServerTextField = UncivTextField("Server address", textToShowForOnlineMultiplayerAddress)
     multiplayerServerTextField.setTextFieldFilter { _, c -> c !in " \r\n\t\\" }
     multiplayerServerTextField.programmaticChangeEvents = true
     val serverIpTable = Table()
@@ -155,7 +124,7 @@ private fun addMultiplayerServerOptions(
         // we can't trim on 'fixTextFieldUrlOnType' for reasons
         settings.multiplayer.server = multiplayerServerTextField.text.trimEnd('/')
 
-        val isCustomServer = OnlineMultiplayer.usesCustomServer()
+        val isCustomServer = Multiplayer.usesCustomServer()
         connectionToServerButton.isEnabled = isCustomServer
 
         for (refreshSelect in toUpdate) refreshSelect.update(isCustomServer)
@@ -189,7 +158,7 @@ private fun addMultiplayerServerOptions(
     }).row()
 
     if (UncivGame.Current.onlineMultiplayer.multiplayerServer.featureSet.authVersion > 0) {
-        val passwordTextField = UncivTextField.create(
+        val passwordTextField = UncivTextField(
             settings.multiplayer.passwords[settings.multiplayer.server] ?: "Password"
         )
         val setPasswordButton = "Set password".toTextButton()
@@ -357,7 +326,7 @@ private class RefreshSelect(
 private fun getInitialOptions(extraCustomServerOptions: List<SelectItem<Duration>>, dropboxOptions: List<SelectItem<Duration>>): Iterable<SelectItem<Duration>> {
     val customServerItems = (extraCustomServerOptions + dropboxOptions).toGdxArray()
     val dropboxItems = dropboxOptions.toGdxArray()
-    return if (OnlineMultiplayer.usesCustomServer()) customServerItems else dropboxItems
+    return if (Multiplayer.usesCustomServer()) customServerItems else dropboxItems
 }
 
 private fun fixTextFieldUrlOnType(textField: TextField) {

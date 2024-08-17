@@ -16,7 +16,7 @@ If you're developing your mod on an Android version of Unciv (not recommended!) 
 - Launch the desktop version with your mod (your mod's main folder is a subfolder of the game's "mods" folder, or symlinked there). This uses the packing methods [documented here](https://libgdx.com/wiki/tools/texture-packer).
 - You can ask someone in the Discord server to help you out.
 - You can use external tools, [e.g. gdx-texture-packer-gui](https://github.com/crashinvaders/gdx-texture-packer-gui). Utmost care needs to be taken that the files can be discovered by Unciv and internal relative paths are correct.
-- The Unciv repo itself has a feature that can pack images on github runners - documentation still needs to be done.
+- The Unciv repo itself has a feature that can pack images on github runners
 
 ### Multiple texture atlases
 
@@ -96,6 +96,63 @@ You can add custom `.ttf` fonts into the game: place `.ttf` file inside of `/fon
 
 All fonts are rendered by default at 50 pixel size and rescaled later for the game's needs. Currently fonts are NOT mipmapped on minification.
 
+### Overriding special characters
+
+The textures in the EmojiIcons subfolder and some others are mapped into the font at specific codepoints. They are used by the game, can be used in any text of a mod, and can be overridden by mod textures.
+Additionally, some code points are normally provided by the chosen system font, but have EmojiIcons names that will override the font glyph if a mod supplies them (marked 'optional' in the table below).
+Note textures provided for such codepoints *do* respect aspect ratio, they do *not* need to be square like many built-in icons are!
+
+| Symbol | Codepoint | Unicode name                       | Texture path                | Optional |
+|:------:|:---------:|:-----------------------------------|:----------------------------|:--------:|
+|   ⛏    |  U+26CF   | pick                               | EmojiIcons/Automate         |          |
+|   ♪    |  U+266A   | eighth note                        | EmojiIcons/Culture          |          |
+|   ☠    |  U+2620   | skull and crossbones               | EmojiIcons/Death            |          |
+|   ☮    |  U+262E   | peace symbol                       | EmojiIcons/Faith            |          |
+|   ⁂    |  U+2042   | asterism                           | EmojiIcons/Food             |          |
+|   ¤    |  U+00A4   | currency sign                      | EmojiIcons/Gold             |          |
+|   ♬    |  U+266C   | sixteenth note                     | EmojiIcons/Great Artist     |          |
+|   ⚒    |  U+2692   | hammer                             | EmojiIcons/Great Engineer   |          |
+|   ⛤    |  U+26E4   | pentagram                          | EmojiIcons/Great General    |          |
+|   ⚖    |  U+2696   | scale                              | EmojiIcons/Great Merchant   |          |
+|   ⚛    |  U+269B   | atom                               | EmojiIcons/Great Scientist  |          |
+|   ⌣    |  U+2323   | smile                              | EmojiIcons/Happiness        |          |
+|   ∞    |  U+221E   | infinity                           | EmojiIcons/Infinity         |    *     |
+|   ⚙    |  U+2699   | gear                               | EmojiIcons/Production       |          |
+|   ⍾    |  U+237E   | bell symbol                        | EmojiIcons/Science          |          |
+|   ￪    |  U+FFEA   | halfwidth upwards arrow            | EmojiIcons/SortedAscending  |    *     |
+|   ◉    |  U+25C9   | fisheye                            | EmojiIcons/SortedByStatus   |    *     |
+|   ⌚    |  U+231A   | watch                              | EmojiIcons/SortedByTime     |    *     |
+|   ￬    |  U+FFEC   | halfwidth upwards arrow            | EmojiIcons/SortedDescending |    *     |
+|   ✯    |  U+272F   | pinwheel star                      | EmojiIcons/Star             |    *     |
+|   ⏳    |  U+23F3   | hourglass                          | EmojiIcons/Turn             |          |
+|   ⅰ    |  U+2170   | small roman numeral one            | MayaCalendar/0              |          |
+|   ⅱ    |  U+2171   | small roman numeral two            | MayaCalendar/1              |          |
+|   ⅲ    |  U+2172   | small roman numeral three          | MayaCalendar/2              |          |
+|   ⅳ    |  U+2173   | small roman numeral four           | MayaCalendar/3              |          |
+|   ⅴ    |  U+2174   | small roman numeral five           | MayaCalendar/4              |          |
+|   ⅵ    |  U+2175   | small roman numeral six            | MayaCalendar/5              |          |
+|   ⅶ    |  U+2176   | small roman numeral seven          | MayaCalendar/6              |          |
+|   ⅷ    |  U+2177   | small roman numeral eight          | MayaCalendar/7              |          |
+|   ⅸ    |  U+2178   | small roman numeral nine           | MayaCalendar/8              |          |
+|   ⅹ    |  U+2179   | small roman numeral ten            | MayaCalendar/9              |          |
+|   ⅺ    |  U+217A   | small roman numeral eleven         | MayaCalendar/10             |          |
+|   ⅻ    |  U+217B   | small roman numeral twelve         | MayaCalendar/11             |          |
+|   ⅼ    |  U+217C   | small roman numeral fifty          | MayaCalendar/12             |          |
+|   ⅽ    |  U+217D   | small roman numeral one hundred    | MayaCalendar/13             |          |
+|   ⅾ    |  U+217E   | small roman numeral five hundred   | MayaCalendar/14             |          |
+|   ⅿ    |  U+217F   | small roman numeral one thousand   | MayaCalendar/15             |          |
+|   ↀ    |  U+2180   | roman numeral one thousand cd      | MayaCalendar/16             |          |
+|   ↁ    |  U+2181   | roman numeral five thousand        | MayaCalendar/17             |          |
+|   ↂ    |  U+2182   | roman numeral ten thousand         | MayaCalendar/18             |          |
+|   Ↄ    |  U+2183   | roman numeral reversed one hundred | MayaCalendar/19             |          |
+|   ය    |  U+0DBA   | sinhala letter yayanna             | MayaCalendar/Baktun         |          |
+|   ඹ    |  U+0DB9   | sinhala letter amba bayanna        | MayaCalendar/Katun          |          |
+|   ම    |  U+0DB8   | sinhala letter mayanna             | MayaCalendar/Tun            |          |
+|   ➡    |  U+27A1   | black rightwards arrow             | StatIcons/Movement          |          |
+|   …    |  U+2026   | horizontal ellipsis                | StatIcons/Range             |          |
+|   ‡    |  U+2021   | double dagger                      | StatIcons/RangedStrength    |          |
+|   †    |  U+2020   | dagger                             | StatIcons/Strength          |          |
+
 ### Adding Wonder Splash Screens
 
 You can add wonder images to mods and they'll be displayed instead of the standard icon when a wonder is finished. The image needs to be a .png and 2:1 ratio so for example 200x100 px.
@@ -114,7 +171,7 @@ For example, [here](https://github.com/yairm210/Unciv-leader-portrait-mod-exampl
 
 ### Adding Portraits
 
-The base game uses flat icons, surrounded with colored circles as backgrounds (e.g. for units to fit the civilization's flag colors), to denote entities such as: units, buildings, techs, resources, improvements, religions, promotions, uniques, unit actions and nations in the UI. A mod can supply "Portraits" - static images that will remain uncolored - by adding images to `/Images/<entityType>Portraits/` (e.g. `/Images/BuildingPortraits/`, /Images/ResourcesPortraits/, etc), which will be used in all UI elements (except for unit icons in the world map). The file name must correspond exactly with the unit/building/tech/resource/etc name  defined in corresponding JSONs (e.g. Units.json, Buildings.json, TileResources.json, etc) or have the same name as the file they suppose to replace, or they will be ignored.
+The base game uses flat icons, surrounded with colored circles as backgrounds (e.g. for units to fit the civilization's flag colors), to denote entities such as: units, buildings, techs, resources, improvements, religions, promotions, uniques, unit actions and nations in the UI. A mod can supply "Portraits" - static images that will remain uncolored - by adding images to `/Images/<entityType>Portraits/` (e.g. `/Images/BuildingPortraits/`, `/Images/ResourcePortraits/`, etc), which will be used in all UI elements (except for unit icons in the world map). The file name must correspond exactly with the unit/building/tech/resource/etc name  defined in corresponding JSONs (e.g. Units.json, Buildings.json, TileResources.json, etc) or have the same name as the file they suppose to replace, or they will be ignored.
 
 If mod supplies '/Images/<entityType>Portraits/Background.png' images, they will be used as a background for corresponding portraits instead of default circle.
 
@@ -228,3 +285,38 @@ placed in a mod's `voices` folder, will play whenever that message is displayed.
 
 Leader voice audio clips will be streamed, not cached, so they are allowed to be long - however, if another Leader voice or a city ambient sound needs to be played, they will be cut off without fade-out
 Also note that voices for City-State leaders work only for those messages a City-state can actually use: `attacked`, `defeated`, and `introduction`.
+
+## Modding Easter eggs
+
+Here's a list of special dates (or date ranges) Unciv will recognize:
+|-----|
+| AprilFoolsDay |
+| DiaDeLosMuertos |
+| Diwali |
+| Easter |
+| Friday13th |
+| LunarNewYear |
+| Passover |
+| PrideDay |
+| Qingming |
+| Samhain |
+| StarWarsDay |
+| TowelDay |
+| UncivBirthday |
+| Xmas |
+| YuleGoat |
+
+... When these are or what they mean - look it up, if in doubt in our sources (😈).
+
+An audiovisual Mod (which the user **must** then mark as permanent) can define textures named "EasterEggs/`name`<index>", where name must correspond exactly to one from the table above, and index starts at 1 counting up.
+Example: <mod>/Images/EasterEggs/Diwali1.png and so on.
+Then, Unciv will display them as "floating art" on the main menu screen, on the corresponding dates. They will from time to time appear from off-screen, slide through the window, and disappear out the other side, with varying angles and speeds.
+
+Notes:
+- You can test this by launching the jar and including `-DeasterEgg=name` on the command line.
+- In case of overlapping holidays, only one is chosen - and the "impact" of longer holidays is equalized by reducing the chance inversely proportional to the number of days. e.g. DiaDeLosMuertos is two days, so each Unciv launch on these days has 50% chance to show the egg.
+- Unciv's "map-based" easter eggs work independently!
+- No cultural prejudice is intended. If you know a nice custom we should include the date test for, just ask.
+
+
+*<entityType>Portraits/: Entities are: 'Unit', 'Building', 'Tech', 'Resource', 'Improvement', 'Promotion', 'Unique', 'Nation', 'Religion', 'UnitAction'

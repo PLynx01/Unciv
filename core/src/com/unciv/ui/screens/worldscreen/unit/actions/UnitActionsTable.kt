@@ -60,6 +60,7 @@ class UnitActionsTable(val worldScreen: WorldScreen) : Table() {
         }
 
         clear()
+        keyShortcuts.clear()
         if (unit == null) return
         if (!worldScreen.canChangeState) return // No actions when it's not your turn or spectator!
 
@@ -127,7 +128,6 @@ class UnitActionsTable(val worldScreen: WorldScreen) : Table() {
         pack()
 
         // Bind all currently invisible actions to their keys
-        keyShortcuts.clear()
         for (page in pageActionBuckets.indices) {
             if (page == currentPage) continue // these are already done
             for (unitAction in pageActionBuckets[page]) {
@@ -179,7 +179,7 @@ class UnitActionsTable(val worldScreen: WorldScreen) : Table() {
         // overlay, since the user definitely wants to interact with the new unit.
         worldScreen.mapHolder.removeUnitActionOverlay()
         if (!UncivGame.Current.settings.autoUnitCycle) return
-        if (unit.isDestroyed || unitAction.type.isSkippingToNextUnit && (unit.isMoving() && unit.currentMovement == 0f || !unit.isMoving()))
+        if (unit.isDestroyed || unitAction.type.isSkippingToNextUnit && (unit.isMoving() && !unit.hasMovement() || !unit.isMoving()))
             worldScreen.switchToNextUnit()
     }
 }

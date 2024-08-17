@@ -8,9 +8,10 @@ import com.unciv.models.ruleset.GlobalUniques
 import com.unciv.models.ruleset.Ruleset
 import com.unciv.models.ruleset.validation.UniqueValidator
 import com.unciv.models.stats.Stats
-import com.unciv.models.translations.getConditionals
+import com.unciv.models.translations.getModifiers
 import com.unciv.models.translations.getPlaceholderParameters
 import com.unciv.models.translations.getPlaceholderText
+import com.unciv.models.translations.removeConditionals
 
 
 class Unique(val text: String, val sourceObjectType: UniqueTarget? = null, val sourceObjectName: String? = null) {
@@ -26,9 +27,9 @@ class Unique(val text: String, val sourceObjectType: UniqueTarget? = null, val s
         if (firstStatParam == null) Stats() // So badly-defined stats don't crash the entire game
         else Stats.parse(firstStatParam)
     }
-    val conditionals: List<Unique> = text.getConditionals()
+    val modifiers: List<Unique> = text.getModifiers()
 
-    val isTimedTriggerable = conditionals.any { it.type == UniqueType.ConditionalTimedUnique }
+    val isTimedTriggerable = hasModifier(UniqueType.ConditionalTimedUnique)
 
     val isTriggerable = type != null && (
         type.targetTypes.contains(UniqueTarget.Triggerable)
@@ -37,16 +38,19 @@ class Unique(val text: String, val sourceObjectType: UniqueTarget? = null, val s
         )
 
     /** Includes conditional params */
-    val allParams = params + conditionals.flatMap { it.params }
+    val allParams = params + modifiers.flatMap { it.params }
 
-    val isLocalEffect = params.contains("in this city") || conditionals.any { it.type == UniqueType.ConditionalInThisCity }
+    val isLocalEffect = params.contains("in this city") || hasModifier(UniqueType.ConditionalInThisCity)
 
     fun hasFlag(flag: UniqueFlag) = type != null && type.flags.contains(flag)
-    fun isHiddenToUsers() = hasFlag(UniqueFlag.HiddenToUsers) || conditionals.any { it.type == UniqueType.ModifierHiddenFromUsers }
+    fun isHiddenToUsers() = hasFlag(UniqueFlag.HiddenToUsers) || hasModifier(UniqueType.ModifierHiddenFromUsers)
 
+    fun getModifiers(type: UniqueType) = modifiers.asSequence().filter { it.type == type }
+    fun hasModifier(type: UniqueType) = getModifiers(type).any()
+    fun isModifiedByGameSpeed() = hasModifier(UniqueType.ModifiedByGameSpeed)
     fun hasTriggerConditional(): Boolean {
-        if (conditionals.none()) return false
-        return conditionals.any { conditional ->
+        if (modifiers.none()) return false
+        return modifiers.any { conditional ->
             conditional.type?.targetTypes?.any {
                 it.canAcceptUniqueTarget(UniqueTarget.TriggerCondition) || it.canAcceptUniqueTarget(UniqueTarget.UnitActionModifier)
             }
@@ -62,10 +66,40 @@ class Unique(val text: String, val sourceObjectType: UniqueTarget? = null, val s
         if (state.ignoreConditionals) return true
         // Always allow Timed conditional uniques. They are managed elsewhere
         if (isTimedTriggerable) return true
-        for (condition in conditionals) {
-            if (!Conditionals.conditionalApplies(this, condition, state)) return false
+        for (modifier in modifiers) {
+            if (!Conditionals.conditionalApplies(this, modifier, state)) return false
         }
         return true
+    }
+
+    private fun getUniqueMultiplier(stateForConditionals: StateForConditionals = StateForConditionals()): Int {
+        val forEveryModifiers = getModifiers(UniqueType.ForEveryCountable)
+        val forEveryAmountModifiers = getModifiers(UniqueType.ForEveryAmountCountable)
+        var amount = 1
+        for (conditional in forEveryModifiers) { // multiple multipliers DO multiply.
+            val multiplier = Countables.getCountableAmount(conditional.params[0], stateForConditionals)
+            if (multiplier != null) amount *= multiplier
+        }
+        for (conditional in forEveryAmountModifiers) { // multiple multipliers DO multiply.
+            val multiplier = Countables.getCountableAmount(conditional.params[1], stateForConditionals)
+            val perEvery = conditional.params[0].toInt()
+            if (multiplier != null) amount *= multiplier / perEvery
+        }
+
+        return amount.coerceAtLeast(0)
+    }
+
+    /** Multiplies the unique according to the multiplication conditionals */
+    fun getMultiplied(stateForConditionals: StateForConditionals = StateForConditionals()): Sequence<Unique> {
+        val multiplier = getUniqueMultiplier(stateForConditionals)
+        return EndlessSequenceOf(this).take(multiplier)
+    }
+
+    private class EndlessSequenceOf<T>(private val value: T) : Sequence<T> {
+        override fun iterator(): Iterator<T> = object : Iterator<T> {
+            override fun next() = value
+            override fun hasNext() = true
+        }
     }
 
     fun getDeprecationAnnotation(): Deprecated? = type?.getDeprecationAnnotation()
@@ -147,6 +181,8 @@ class Unique(val text: String, val sourceObjectType: UniqueTarget? = null, val s
 
 
     override fun toString() = if (type == null) "\"$text\"" else "$type (\"$text\")"
+    fun getDisplayText(): String = if (modifiers.none { it.isHiddenToUsers() }) text
+        else text.removeConditionals() + " " + modifiers.filter { !it.isHiddenToUsers() }.joinToString(" ") { "<${it.text}>" }
 }
 
 /** Used to cache results of getMatchingUniques
@@ -196,7 +232,8 @@ class LocalUniqueCache(val cache: Boolean = true) {
     /** Get cached results as a sequence */
     private fun get(key: String, sequence: Sequence<Unique>): Sequence<Unique> {
         if (!cache) return sequence
-        if (keyToUniques.containsKey(key)) return keyToUniques[key]!!
+        val valueInMap = keyToUniques[key]
+        if (valueInMap != null) return valueInMap
         // Iterate the sequence, save actual results as a list, as return a sequence to that
         val results = sequence.toList().asSequence()
         keyToUniques[key] = results
@@ -235,25 +272,22 @@ class UniqueMap() : HashMap<String, ArrayList<Unique>>() {
 
     fun getMatchingUniques(uniqueType: UniqueType, state: StateForConditionals) = getUniques(uniqueType)
         .filter { it.conditionalsApply(state) && !it.isTimedTriggerable }
+        .flatMap { it.getMultiplied(state) }
 
     fun getAllUniques() = this.asSequence().flatMap { it.value.asSequence() }
 
     fun getTriggeredUniques(trigger: UniqueType, stateForConditionals: StateForConditionals): Sequence<Unique> {
         return getAllUniques().filter { unique ->
-            unique.conditionals.any { it.type == trigger }
-            && unique.conditionalsApply(stateForConditionals)
-        }
+            unique.hasModifier(trigger) && unique.conditionalsApply(stateForConditionals)
+        }.flatMap { it.getMultiplied(stateForConditionals) }
     }
-
-    /** This is an alias for [containsKey] to clarify when a pure string-based check is legitimate. */
-    fun containsFilteringUnique(filter: String) = containsKey(filter)
 }
 
 
 class TemporaryUnique() : IsPartOfGameInfoSerialization {
 
     constructor(uniqueObject: Unique, turns: Int) : this() {
-        val turnsText = uniqueObject.conditionals.first { it.type == UniqueType.ConditionalTimedUnique }.text
+        val turnsText = uniqueObject.getModifiers(UniqueType.ConditionalTimedUnique).first().text
         unique = uniqueObject.text.replaceFirst("<$turnsText>", "").trim()
         sourceObjectType = uniqueObject.sourceObjectType
         sourceObjectName = uniqueObject.sourceObjectName

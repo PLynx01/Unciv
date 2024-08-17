@@ -7,8 +7,10 @@ import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.civilization.NotificationCategory
 import com.unciv.logic.civilization.NotificationIcon
 import com.unciv.logic.trade.Trade
+import com.unciv.logic.trade.TradeEvaluation
+import com.unciv.logic.trade.TradeLogic
 import com.unciv.logic.trade.TradeOffer
-import com.unciv.logic.trade.TradeType
+import com.unciv.logic.trade.TradeOfferType
 import com.unciv.models.ruleset.tile.ResourceSupplyList
 import com.unciv.models.ruleset.unique.StateForConditionals
 import com.unciv.models.ruleset.unique.UniqueTriggerActivation
@@ -16,6 +18,7 @@ import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.ui.components.extensions.toPercent
 import kotlin.math.ceil
 import kotlin.math.max
+import kotlin.math.roundToInt
 import kotlin.math.sign
 
 enum class RelationshipLevel(val color: Color) {
@@ -31,8 +34,8 @@ enum class RelationshipLevel(val color: Color) {
     Ally(Color.CHARTREUSE)           // HSV(90,100,100)
     ;
     operator fun plus(delta: Int): RelationshipLevel {
-        val newOrdinal = (ordinal + delta).coerceIn(0, values().size - 1)
-        return values()[newOrdinal]
+        val newOrdinal = (ordinal + delta).coerceIn(0, entries.size - 1)
+        return entries[newOrdinal]
     }
 }
 
@@ -46,25 +49,35 @@ enum class DiplomacyFlags {
     DeclinedDeclarationOfFriendship,
     DefensivePact,
     DeclinedDefensivePact,
+    DeclinedJoinWarOffer,
     ResearchAgreement,
     BorderConflict,
+
     SettledCitiesNearUs,
     AgreedToNotSettleNearUs,
     IgnoreThemSettlingNearUs,
+
+    SpreadReligionInOurCities,
+    AgreedToNotSpreadReligion,
+    IgnoreThemSpreadingReligion,
+
     ProvideMilitaryUnit,
     MarriageCooldown,
     NotifiedAfraid,
     RecentlyPledgedProtection,
     RecentlyWithdrewProtection,
     AngerFreeIntrusion,
+
     RememberDestroyedProtectedMinor,
     RememberAttackedProtectedMinor,
     RememberBulliedProtectedMinor,
     RememberSidedWithProtectedMinor,
+
     Denunciation,
     WaryOf,
     Bullied,
     RecentlyAttacked,
+    ResourceTradesCutShort,
 }
 
 enum class DiplomaticModifiers(val text: String) {
@@ -79,12 +92,15 @@ enum class DiplomaticModifiers(val text: String) {
     Denunciation("You have publicly denounced us!"),
     DenouncedOurAllies("You have denounced our allies"),
     RefusedToNotSettleCitiesNearUs("You refused to stop settling cities near us"),
+    RefusedToNotSpreadReligionToUs("You refused to stop spreading religion to us"),
     BetrayedPromiseToNotSettleCitiesNearUs("You betrayed your promise to not settle cities near us"),
+    BetrayedPromiseToNotSpreadReligionToUs("You betrayed your promise to not spread your religion to us"),
     UnacceptableDemands("Your arrogant demands are in bad taste"),
     UsedNuclearWeapons("Your use of nuclear weapons is disgusting!"),
     StealingTerritory("You have stolen our lands!"),
     DestroyedProtectedMinor("You destroyed City-States that were under our protection!"),
     AttackedProtectedMinor("You attacked City-States that were under our protection!"),
+    AttackedAlliedMinor("You attacked our allied City-States!"),
     BulliedProtectedMinor("You demanded tribute from City-States that were under our protection!"),
     SidedWithProtectedMinor("You sided with a City-State over us"),
     SpiedOnUs("You spied on us!"),
@@ -100,13 +116,14 @@ enum class DiplomaticModifiers(val text: String) {
     DenouncedOurEnemies("You have denounced our enemies"),
     OpenBorders("Our open borders have brought us closer together."),
     FulfilledPromiseToNotSettleCitiesNearUs("You fulfilled your promise to stop settling cities near us!"),
+    FulfilledPromiseToNotSpreadReligion("You fulfilled your promise to stop spreading religion to us!"),
     GaveUsUnits("You gave us units!"),
     GaveUsGifts("We appreciate your gifts"),
     ReturnedCapturedUnits("You returned captured units to us"),
     BelieveSameReligion("We believe in the same religion");
 
     companion object{
-        private val valuesAsMap = DiplomaticModifiers.values().associateBy { it.name }
+        private val valuesAsMap = entries.associateBy { it.name }
         fun safeValueOf(name: String) = valuesAsMap[name]
     }
 }
@@ -169,7 +186,7 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
 
     //region pure functions
     fun otherCiv() = civInfo.gameInfo.getCivilization(otherCivName)
-    fun otherCivDiplomacy() = otherCiv().getDiplomacyManager(civInfo)
+    fun otherCivDiplomacy() = otherCiv().getDiplomacyManager(civInfo)!!
 
     fun turnsToPeaceTreaty(): Int {
         for (trade in trades)
@@ -197,7 +214,7 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
      *  @return `true` if [relationshipLevel] ().compareTo([level]) == [comparesAs] - or: when [comparesAs] > 0 only if [relationshipLevel] > [level] and so on.
      */
     private fun compareRelationshipLevel(level: RelationshipLevel, comparesAs: Int): Boolean {
-        if (!civInfo.isCityState())
+        if (!civInfo.isCityState)
             return relationshipLevel().compareTo(level).sign == comparesAs
         return when(level) {
             RelationshipLevel.Afraid -> when {
@@ -243,7 +260,7 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
     fun relationshipLevel(): RelationshipLevel {
         val level = relationshipIgnoreAfraid()
         return when {
-            level != RelationshipLevel.Neutral || !civInfo.isCityState() -> level
+            level != RelationshipLevel.Neutral || !civInfo.isCityState -> level
             civInfo.cityStateFunctions.getTributeWillingness(otherCiv()) > 0 -> RelationshipLevel.Afraid
             else -> RelationshipLevel.Neutral
         }
@@ -255,9 +272,9 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
             return RelationshipLevel.Neutral // People make their own choices.
 
         if (civInfo.isHuman())
-            return otherCiv().getDiplomacyManager(civInfo).relationshipLevel()
+            return otherCivDiplomacy().relationshipLevel()
 
-        if (civInfo.isCityState()) return when {
+        if (civInfo.isCityState) return when {
             getInfluence() <= -30 -> RelationshipLevel.Unforgivable  // getInfluence tests isAtWarWith
             getInfluence() < 0 -> RelationshipLevel.Enemy
             getInfluence() >= 60 && civInfo.getAllyCiv() == otherCivName -> RelationshipLevel.Ally
@@ -291,10 +308,10 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
 
     /** Returns the number of turns to degrade from Ally or from Friend */
     fun getTurnsToRelationshipChange(): Int {
-        if (otherCiv().isCityState())
+        if (otherCiv().isCityState)
             return otherCivDiplomacy().getTurnsToRelationshipChange()
 
-        if (civInfo.isCityState() && !otherCiv().isCityState()) {
+        if (civInfo.isCityState && !otherCiv().isCityState) {
             val dropPerTurn = getCityStateInfluenceDegrade()
             return when {
                 dropPerTurn == 0f -> 0
@@ -387,9 +404,11 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
     }
 
 
-    fun canDeclareWar() = turnsToPeaceTreaty() == 0 && diplomaticStatus != DiplomaticStatus.War
+    fun canDeclareWar() = !civInfo.isDefeated() && !otherCiv().isDefeated()
+            && turnsToPeaceTreaty() == 0 && diplomaticStatus != DiplomaticStatus.War
 
-    fun declareWar(declareWarReason: DeclareWarReason = DeclareWarReason(WarType.DirectWar)) = DeclareWar.declareWar(this, declareWarReason)
+    fun declareWar(declareWarReason: DeclareWarReason = DeclareWarReason(WarType.DirectWar)) =
+        DeclareWar.declareWar(this, declareWarReason)
 
     //Used for nuke
     fun canAttack() = turnsToPeaceTreaty() == 0
@@ -397,9 +416,9 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
     fun goldPerTurn(): Int {
         var goldPerTurnForUs = 0
         for (trade in trades) {
-            for (offer in trade.ourOffers.filter { it.type == TradeType.Gold_Per_Turn })
+            for (offer in trade.ourOffers.filter { it.type == TradeOfferType.Gold_Per_Turn })
                 goldPerTurnForUs -= offer.amount
-            for (offer in trade.theirOffers.filter { it.type == TradeType.Gold_Per_Turn })
+            for (offer in trade.theirOffers.filter { it.type == TradeOfferType.Gold_Per_Turn })
                 goldPerTurnForUs += offer.amount
         }
         return goldPerTurnForUs
@@ -410,7 +429,7 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
         val newResourceSupplyList = ResourceSupplyList()
         val resourcesMap = civInfo.gameInfo.ruleset.tileResources
         val isResourceFilter: (TradeOffer) -> Boolean = {
-            (it.type == TradeType.Strategic_Resource || it.type == TradeType.Luxury_Resource)
+            (it.type == TradeOfferType.Strategic_Resource || it.type == TradeOfferType.Luxury_Resource)
                     && resourcesMap.containsKey(it.name)
                     && !resourcesMap[it.name]!!.isStockpiled()
         }
@@ -432,7 +451,7 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
      *  This includes friendly and allied city-states and the open border treaties.
      */
     fun isConsideredFriendlyTerritory(): Boolean {
-        if (civInfo.isCityState() &&
+        if (civInfo.isCityState &&
             (isRelationshipLevelGE(RelationshipLevel.Friend) || otherCiv().hasUnique(UniqueType.CityStateTerritoryAlwaysFriendly)))
             return true
 
@@ -468,11 +487,20 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
 
         for (thirdCiv in civInfo.getKnownCivs()) {
             // Our ally city states make peace with us
-            if (thirdCiv.getAllyCiv() == civInfo.civName && thirdCiv.isAtWarWith(otherCiv))
-                thirdCiv.getDiplomacyManager(otherCiv).makePeace()
+            if (thirdCiv.getAllyCiv() == civInfo.civName && thirdCiv.isAtWarWith(otherCiv)) {
+                val thirdCivDiplo = thirdCiv.getDiplomacyManager(otherCiv)!!
+                thirdCivDiplo.makePeace()
+
+                // Make the peace treaty so that the civ can't declare war immedietly
+                val tradeLogic = TradeLogic(thirdCiv, otherCiv)
+                tradeLogic.currentTrade.ourOffers.add(TradeOffer(Constants.peaceTreaty, TradeOfferType.Treaty, speed = civInfo.gameInfo.speed))
+                tradeLogic.currentTrade.theirOffers.add(TradeOffer(Constants.peaceTreaty, TradeOfferType.Treaty, speed = civInfo.gameInfo.speed))
+                thirdCivDiplo.trades.add(tradeLogic.currentTrade)
+                thirdCivDiplo.otherCivDiplomacy().trades.add(tradeLogic.currentTrade.reverse())
+            }
             // Other City-States that are not our ally don't like the fact that we made peace with their enemy
             if (thirdCiv.getAllyCiv() != civInfo.civName && thirdCiv.isAtWarWith(otherCiv))
-                thirdCiv.getDiplomacyManager(civInfo).addInfluence(-10f)
+                thirdCiv.getDiplomacyManager(civInfo)!!.addInfluence(-10f)
         }
     }
 
@@ -527,9 +555,9 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
         for (thirdCiv in getCommonKnownCivsWithSpectators()) {
             thirdCiv.addNotification("[${civInfo.civName}] and [$otherCivName] have signed the Declaration of Friendship!",
                 NotificationCategory.Diplomacy, civInfo.civName, NotificationIcon.Diplomacy, otherCivName)
-            thirdCiv.getDiplomacyManager(civInfo).setFriendshipBasedModifier()
+            thirdCiv.getDiplomacyManager(civInfo)!!.setFriendshipBasedModifier()
             if (thirdCiv.isSpectator()) return
-            thirdCiv.getDiplomacyManager(civInfo).setFriendshipBasedModifier()
+            thirdCiv.getDiplomacyManager(civInfo)!!.setFriendshipBasedModifier()
         }
 
         // Ignore contitionals as triggerUnique will check again, and that would break
@@ -543,15 +571,18 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
     internal fun setFriendshipBasedModifier() {
         removeModifier(DiplomaticModifiers.DeclaredFriendshipWithOurAllies)
         removeModifier(DiplomaticModifiers.DeclaredFriendshipWithOurEnemies)
-        for (thirdCiv in getCommonKnownCivs()
-                .filter { it.getDiplomacyManager(civInfo).hasFlag(DiplomacyFlags.DeclarationOfFriendship) }) {
+        val civsOtherCivHasDeclaredFriendshipWith = getCommonKnownCivs()
+            .filter { it.getDiplomacyManager(otherCiv())!!.hasFlag(DiplomacyFlags.DeclarationOfFriendship) }
 
-            val relationshipLevel = otherCiv().getDiplomacyManager(thirdCiv).relationshipIgnoreAfraid()
-            val modifierType = when (relationshipLevel) {
+        for (thirdCiv in civsOtherCivHasDeclaredFriendshipWith) {
+            // What do we (A) think about the otherCiv() (B) being friends with the third Civ (C)?
+            val ourRelationshipWithThirdCiv = civInfo.getDiplomacyManager(thirdCiv)!!.relationshipIgnoreAfraid()
+
+            val modifierType = when (ourRelationshipWithThirdCiv) {
                 RelationshipLevel.Unforgivable, RelationshipLevel.Enemy -> DiplomaticModifiers.DeclaredFriendshipWithOurEnemies
                 else -> DiplomaticModifiers.DeclaredFriendshipWithOurAllies
             }
-            val modifierValue = when (relationshipLevel) {
+            val modifierValue = when (ourRelationshipWithThirdCiv) {
                 RelationshipLevel.Unforgivable -> -15f
                 RelationshipLevel.Enemy -> -5f
                 RelationshipLevel.Friend -> 5f
@@ -576,7 +607,7 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
             thirdCiv.addNotification("[${civInfo.civName}] and [$otherCivName] have signed a Defensive Pact!",
                 NotificationCategory.Diplomacy, civInfo.civName, NotificationIcon.Diplomacy, otherCivName)
             if (thirdCiv.isSpectator()) return
-            thirdCiv.getDiplomacyManager(civInfo).setDefensivePactBasedModifier()
+            thirdCiv.getDiplomacyManager(civInfo)!!.setDefensivePactBasedModifier()
         }
 
         // Ignore contitionals as triggerUnique will check again, and that would break
@@ -591,9 +622,9 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
         removeModifier(DiplomaticModifiers.SignedDefensivePactWithOurAllies)
         removeModifier(DiplomaticModifiers.SignedDefensivePactWithOurEnemies)
         for (thirdCiv in getCommonKnownCivs()
-            .filter { it.getDiplomacyManager(civInfo).hasFlag(DiplomacyFlags.DefensivePact) }) {
+            .filter { it.getDiplomacyManager(civInfo)!!.hasFlag(DiplomacyFlags.DefensivePact) }) {
             //Note: These modifiers are additive to the friendship modifiers
-            val relationshipLevel = otherCiv().getDiplomacyManager(thirdCiv).relationshipIgnoreAfraid()
+            val relationshipLevel = otherCivDiplomacy().relationshipIgnoreAfraid()
             val modifierType = when (relationshipLevel) {
                 RelationshipLevel.Unforgivable, RelationshipLevel.Enemy -> DiplomaticModifiers.SignedDefensivePactWithOurEnemies
                 else -> DiplomaticModifiers.SignedDefensivePactWithOurAllies
@@ -610,7 +641,7 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
     }
 
     internal fun setReligionBasedModifier() {
-        if (civInfo.getDiplomacyManager(otherCiv()).believesSameReligion())
+        if (otherCivDiplomacy().believesSameReligion())
             // they share same majority religion
             setModifier(DiplomaticModifiers.BelieveSameReligion, 5f)
         else
@@ -632,8 +663,8 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
             thirdCiv.addNotification("[${civInfo.civName}] has denounced [$otherCivName]!",
                 NotificationCategory.Diplomacy, civInfo.civName, NotificationIcon.Diplomacy, otherCivName)
             if (thirdCiv.isSpectator()) return@forEach
-            val thirdCivRelationshipWithOtherCiv = thirdCiv.getDiplomacyManager(otherCiv()).relationshipIgnoreAfraid()
-            val thirdCivDiplomacyManager = thirdCiv.getDiplomacyManager(civInfo)
+            val thirdCivRelationshipWithOtherCiv = thirdCiv.getDiplomacyManager(otherCiv())!!.relationshipIgnoreAfraid()
+            val thirdCivDiplomacyManager = thirdCiv.getDiplomacyManager(civInfo)!!
             when (thirdCivRelationshipWithOtherCiv) {
                 RelationshipLevel.Unforgivable -> thirdCivDiplomacyManager.addModifier(DiplomaticModifiers.DenouncedOurEnemies, 15f)
                 RelationshipLevel.Enemy -> thirdCivDiplomacyManager.addModifier(DiplomaticModifiers.DenouncedOurEnemies, 5f)
@@ -659,6 +690,21 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
             NotificationCategory.Diplomacy, NotificationIcon.Diplomacy, civInfo.civName)
     }
 
+    fun agreeNotToSpreadReligionTo() {
+        otherCivDiplomacy().setFlag(DiplomacyFlags.AgreedToNotSpreadReligion, 100)
+        addModifier(DiplomaticModifiers.UnacceptableDemands, -10f)
+        otherCiv().addNotification("[${civInfo.civName}] agreed to stop spreading religion to us!",
+            NotificationCategory.Diplomacy, NotificationIcon.Diplomacy, civInfo.civName)
+    }
+
+    fun refuseNotToSpreadReligionTo() {
+        addModifier(DiplomaticModifiers.UnacceptableDemands, -20f)
+        otherCivDiplomacy().setFlag(DiplomacyFlags.IgnoreThemSpreadingReligion, 100)
+        otherCivDiplomacy().addModifier(DiplomaticModifiers.RefusedToNotSpreadReligionToUs, -15f)
+        otherCiv().addNotification("[${civInfo.civName}] refused to stop spreading religion to us!",
+            NotificationCategory.Diplomacy, NotificationIcon.Diplomacy, civInfo.civName)
+    }
+
     fun sideWithCityState() {
         otherCivDiplomacy().setModifier(DiplomaticModifiers.SidedWithProtectedMinor, -5f)
         otherCivDiplomacy().setFlag(DiplomacyFlags.RememberSidedWithProtectedMinor, 25)
@@ -670,6 +716,48 @@ class DiplomacyManager() : IsPartOfGameInfoSerialization {
         otherCiv().addNotification("City-States grow wary of your aggression. " +
                 "The resting point for Influence has decreased by [20] for [${civInfo.civName}].",
             NotificationCategory.Diplomacy, civInfo.civName)
+    }
+
+    /**
+     * Resolves the otherCiv giving gifts to this civ with negative gold values.
+     * Prioritises reducing gifts given to the other civ before increasing our gift value.
+     * Does not take the gold from either civ's stockpile
+     * @param gold the amount of gold without inflation, can be negative
+     * @param isPureGift should be true if the gift was one-sided, or false if it wasn't
+     */
+    fun giftGold(gold: Int, isPureGift: Boolean) {
+        val currentGold = if (isPureGift)
+            (gold * civInfo.gameInfo.ruleset.modOptions.constants.goldGiftMultiplier).roundToInt()
+        else
+            (gold * civInfo.gameInfo.ruleset.modOptions.constants.goldGiftTradeMultiplier).roundToInt()
+
+        val otherGold = otherCivDiplomacy().getGoldGifts()
+        if (otherGold > currentGold) {
+            otherCivDiplomacy().recieveGoldGifts(-currentGold)
+        } else {
+            otherCivDiplomacy().removeModifier(DiplomaticModifiers.GaveUsGifts)
+            recieveGoldGifts(currentGold - otherGold)
+        }
+    }
+
+    /**
+     * Adds a gift from the other civilization of the value of [gold] that will deteriate over time.
+     * Does not take into account how much gold we have given to the other civ. Use [giftGold] for that.
+     * Does not take the gold from either civ's stockpile.
+     * @param gold the amount of gold without inflation, cannot be negative
+     */
+    fun recieveGoldGifts(gold: Int) {
+        val diplomaticValueOfTrade = (gold * TradeEvaluation().getGoldInflation(civInfo)) / (civInfo.gameInfo.speed.goldGiftModifier * 100)
+        addModifier(DiplomaticModifiers.GaveUsGifts, diplomaticValueOfTrade.toFloat())
+    }
+
+    /**
+     * @return the total value of the gold gifts the other civilization has given us
+     */
+    fun getGoldGifts(): Int {
+        // The inverse of howe we calculate GaveUsGifts in TradeLogic.acceptTrade gives us how much gold it is worth
+        val giftAmount = getModifier(DiplomaticModifiers.GaveUsGifts)
+        return ((giftAmount * civInfo.gameInfo.speed.goldGiftModifier * 100) / TradeEvaluation().getGoldInflation(civInfo)).toInt()
     }
 
     //endregion

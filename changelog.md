@@ -1,3 +1,403 @@
+## 4.12.19
+
+Multiplayer: Add button to skip current player after 24h inactivity 
+
+Strategic balance applies only to major civs, as per Civ V
+
+Automated settlers take conditionals on settling locations into account
+
+Modding: Added ruleset validation that 2 policies in the same branch do not have the same position
+
+"Land to water" natural wonders do not cause ruins on water tiles
+
+## 4.12.18
+
+Reduced (uncompressed) save file size by 15%, with 15% pending later versions
+
+Multiplayer improvements:
+- Add descriptor (you/friend name/unknown) to current player
+- Auto-download missing mods when joining multiplayer game
+- Can force-resign any human, if 'admin' spectator or player is inactive for 48h
+- Disable resign button on games where it's not your turn
+
+Fixed city console rename to set exact text (not quoted/lowercased)
+
+Conditional that tests if a mod is enabled - by @SomeTroglodyte
+
+## 4.12.17
+
+Modding:
+- More unit uniques applicable globally
+- Recognize Tutorials.json file in ruleset validation
+
+"Unavailable" promotions are unavailable in UI as well
+
+Can go to war with no warmongering penalties if allied or protected city-states have been attacked
+
+City states no longer gift units that push us over resource limits 
+
+Allow unitset and tileset overrides for base ruleset mods
+
+Enhance modding freedom for Natural Wonders  - By SomeTroglodyte
+
+## 4.12.16
+
+Fixed world wrap for games saved during 4.12.15
+
+'gain control over tiles' trigger leaves your tiles alone 
+
+By SomeTroglodyte:
+- Fix new improvements becoming visible on non-observed tiles 
+- Fix rare crash opening overview on turn 0 
+- Console command to change difficulty 
+
+AI is less motivated to declare war at higher difficulty levels  - By tuvus
+
+By itanasi:
+- Civilopedia Entries: Food, Production, Science, and Gold 
+- Add Air Intercept Range to Civilopedia card 
+
+## 4.12.15
+
+Modding:
+- Validate mod folder names and catch misspellings
+- Improvement Unique converted to trigger - "Gain control over [tileFilter] tiles in a [amount]-tile radius"
+- Resolved map type generation errors kudos @SomeTroglodyte
+
+Automated workers prioritize replacing features to get to lux/strategic resources
+
+Changed 'default map' parameters to rectangular + world wrap
+
+Fixed "when friends" / "when allies" translations
+
+Resolved 'move to next unit' problems - kudos @vincemolnar
+
+## 4.12.14
+
+Add CLI argument to specify the data directory - this will allow native install on Windows, hopefully
+
+Modding: New unit triggers to gain/lose movement points
+
+AI citizen focus improvements - By EmperorPinguin
+
+Correct spelling of 'Svannah' to 'Savannah' across project.  - By aaronjfeingold
+
+## 4.12.13
+
+Special nuke animation, to make it feel more momentous
+
+Better repeatable unique randomization
+
+Modding:
+- mapUnitFilter no longer errors for correct values
+- Better display of "object is missing a name" errors
+- Fix endless loop when many units can transfer movement to each other
+
+By tuvus:
+- Made Gold Gifting moddable 
+- Make AI difficulty moddable 
+
+Repair Qingmin holiday  - By SomeTroglodyte
+
+Civilopedia Updates: Trade Routes and Air Combat  - By itanasi
+
+## 4.12.12
+
+Terrain civilopedia displays improvements that can be placed
+
+Fixed paradrop to areas outside of movement range
+
+Fix number translation removing 0 digits from strings like "1,023"
+
+Modding:
+
+- Catch & fix unknown json filenames
+- Added autoreplace for deprecated modifiers
+- "counted unit actions" can handle different parameters of same unique
+
+AI can no longer buy wonders
+
+Gift gold fix  - By tuvus
+
+Fix parameter mapping for UnitSupplyPerPop  - By SomeTroglodyte
+
+## 4.12.11
+
+Modding: Added unique builder screen, accessible from mod checker :D
+
+Fixed Workboat construction automation ignoring existing workboat in city
+
+Fixed air unit movement on map
+
+Fixed icons in Wonder location "near city" for cities with nation names
+
+Rome/Babylon capital takeover no longer renames like city states
+
+By tuvus:
+- Animations now show escort units 
+- Escort movement fix 
+
+More Numbers Translations Coverage  - By touhidurrr
+
+Correct the colors of the flag of Ukraine  - By kostia1st
+
+## 4.12.10
+
+UNIT MOVEMENT ANIMATION!
+
+New uniques:
+- "Can only start games from the starting era" mod option
+- "if [buildingFilter] is not constructed" unique
+
+AI no longer declares war against defeated civs
+
+Unified AI and Human gold purchase logic
+
+Ruleset validation: Catch "building required for victory milestone but does not exist" errors
+
+"Will not be replaced by automated units" unique fix
+
+Fix cases where Numbers Translations does not work properly  - By touhidurrr
+
+## 4.12.9
+
+Solved edge-case missing images bug
+
+Hidden conditionals are hidden in more places
+
+Duplicate notifications are all shown
+
+Fixed infinite air units in cities
+
+Friendship-based modifiers calculated correctly
+
+By SomeTroglodyte:
+- UX: Notifications for map units select better when tapped 
+- Fix GlobalPoliticsOverviewTable table layout after switching back from diagram 
+
+By SpacedOutChicken:
+- Correct Unique parameters doc to display terrain quality 
+
+## 4.12.8
+
+Performance improvements
+
+Better simulation automation
+
+Added missing deprecation validation for unit uniques
+
+By SomeTroglodyte:
+- Translation updates work for diacritic-using languages 
+
+For languages with special number characters, translate numbers to selected language  - By touhidurrr
+
+## 4.12.7
+
+AI: Better placement for Great Improvements
+
+City focus resets to default when annexed
+
+Allow multiplication for event triggers
+
+"Consumes resources" unique not displayed twice for constructions in city screen
+
+Added promotionName as possible value for mapUnitFilter
+
+Fixed team war giving "they declared war on us" notification to a civ declaring war - By tuvus
+
+New language translation - Bangla - by touhidurr
+
+## 4.12.6
+
+Many performance improvements!
+
+By SomeTroglodyte: 
+- Support for languages using Diacritics (e.g. Bangla)  
+
+By tuvus:
+- Improved unit automation for defending cities 
+- Warmongering doesn't apply to civs that are angry at the target civ 
+
+Optimize screen orientation  - By HChenX - *NEW CONTRIBUTOR!*
+
+AI behaviour changes  - By EmperorPinguin - *NEW CONTRIBUTOR!*
+
+## 4.12.5
+
+Re-add 'construct great improvement' automation for great units that can't do their main actions
+
+Promotion added to unit already containing that promotion, does not retrigger trigger uniques
+
+"Unavailable" units cannot be upgraded to
+
+By SeventhM:
+- Consider passive strength bonuses for force value 
+- Pass in civ for building on tiles 
+
+By SomeTroglodyte:
+- Larger clipboard size on Desktop
+- Add a Unique allowing an Improvement to specify which Resource(s) it improves 
+
+## 4.12.4
+
+Modding version!
+
+- Triggered uniques accept multiplying modifiers
+- Better "Withdraws before melee combat" unique
+- Clearer "no damage penalty for wounded units" unique
+- Countables for Cities, Units, Buildings allow filters
+
+Performance improvements for religion
+
+UI: Improve load game screen - better feedback, missing templates  - By SomeTroglodyte
+
+## 4.12.3
+
+Modding: 
+- "after [amount] turns" -> "after turn number [amount]"
+- "before [amount] turns" -> "before turn number [amount]"
+- "when number of [countable] is greater than [countable]" -> "when number of [countable] is more than [countable]"
+- Clean improvement queue from improvements no longer in ruleset
+- Better unique documentation
+
+Fix performance problem for displaying air units in cities
+
+Fix "edit existing trade" exploit
+
+Fix console city add/remove building format - By SomeTroglodyte
+
+## 4.12.2
+
+Tech, policy, unit and terrain uniques provide multiplied uniques with "for every [countable]" / "for every [amount] [countable]" modifiers
+
+Many performance improvements
+
+Units teleport out of open borders on war declaration
+
+Inquisitors go out of city centers when spaceship parts need to be added in
+
+Add personality uses  - By tuvus
+
+Improvement picker fixes - By SomeTroglodyte 
+
+## 4.12.1
+
+Performance improvements 
+
+"join war" offers only valid if can declare war
+
+Added "Will not be replaced by automated units" unique
+
+By tuvus:
+- Defeated civilizations don't use spies
+- Spies deselect when moved on map 
+- Civs can no longer declare war right after peace with a city-state 
+- Moved automation settings to AutoPlayTab
+
+By SomeTroglodyte:
+- Fix disband spamming 
+- Fix coastal rivers near Rock of Gibraltar 
+
+Turn Privateer's ability into promotion - By SpacedOutChicken
+
+## 4.12.0
+
+Fixed spy automation crash
+
+By tuvus:
+- Personality implementation
+- AI is more likely to sign Defensive pacts
+- Giving the AI good trades is stored as credit
+- Fix election crash
+
+By SomeTroglodyte:
+- Map editor can place improvements again
+- Reduce size of the save game json
+- Improvement queue
+
+## 4.11.19
+
+New unique trigger: "<upon expending a [mapUnitFilter] unit>"
+
+Console:
+- `city addtile <cityName>` takes an optional `[radius]` parameter
+- `civ addtech` / `civ removetech` commands
+
+By SomeTroglodyte:
+- Use Events for moddable, floating "Tutorials"!
+- Allow EmpireOverview persistence across game launches
+- Moddable images for special characters
+
+By tuvus:
+- Moddable city ranges
+- Extra Civ and Spy moddability
+
+## 4.11.18
+
+We passed 1000 versions! :D
+
+"(modified by game speed)" modifier
+
+Fixed "Promotes all spies [amount] time(s)" crash
+
+By SomeTroglodyte:
+- UX: Dev Console easier to use without installing keyboard apps
+- Improve update of "Last seen improvement"
+
+Reworked AI war evaluation and plans  - By tuvus
+
+## 4.11.17
+
+Unavailable techs work well with tech picker screen
+
+Added ruleset check for resource uniques with resource conditionals
+
+By tuvus:
+- Added an option to disable move by long press
+- Fixed spy steal tech timer
+- Spy max rank can be modded
+
+By SomeTroglodyte:
+- Sortable unit overview
+- Console: Improve `civ activatetrigger` command
+- UI candy: WLTK fireworks
+- ModOptions unique for mods to control which map gets preselected
+
+## 4.11.16
+
+AI no longer trusts you on resource trades if you cut deals short
+
+Added "per every X countables" modifier
+
+Add unit name and building name countables
+
+By SomeTroglodyte:
+- Allow mod sounds to be selected as multiplayer notification sound
+- Allow access to the Dev Console on mobile devices
+- Better "work has started" notifications
+- Console: create natural wonder and `tile find`
+
+By tuvus:
+- Removed espionage debug setting
+- Added spy steal tech timer
+
+## 4.11.15
+
+Modding: "for every [countable]" unique modifier
+
+Added links to base ruleset template in docs
+
+Fixed "don't allow era select" if the game has no techs
+
+By SomeTroglodyte:
+- Support for Zulu language
+
+By tuvus:
+- Clicking the spy button no longer allows the spy to be moved when it isn't their turn
+- Added the Espionage civilopedia entry
+- Construction automation rework
+- Espionage button cancels moving spy
+
 ## 4.11.14
 
 Allow rulesets to forgo capital city indicators entirely!

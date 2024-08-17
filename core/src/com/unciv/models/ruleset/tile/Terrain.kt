@@ -16,6 +16,7 @@ class Terrain : RulesetStatsObject() {
 
     lateinit var type: TerrainType
 
+    /** For terrain features - indicates the stats of this terrain override those of all previous layers */
     var overrideStats = false
 
     /** If true, nothing can be built here - not even resource improvements */
@@ -24,7 +25,9 @@ class Terrain : RulesetStatsObject() {
     /** For terrain features */
     val occursOn = ArrayList<String>()
 
-    /** Used by Natural Wonders: it is the baseTerrain on top of which the Natural Wonder is placed */
+    /** Used by Natural Wonders: it is the baseTerrain on top of which the Natural Wonder is placed
+     *  Omitting it means the Natural Wonder is placed on whatever baseTerrain the Tile already had (limited by occursOn)
+     */
     var turnsInto: String? = null
 
     override fun getUniqueTarget() = UniqueTarget.Terrain
@@ -96,6 +99,15 @@ class Terrain : RulesetStatsObject() {
             }
         }
 
+        val improvementsThatCanBePlacedHere = ruleset.tileImprovements.values
+            .filter { it.terrainsCanBeBuiltOn.contains(name) }
+        if (improvementsThatCanBePlacedHere.isNotEmpty()){
+            textList += FormattedLine("{Tile Improvements}:")
+            for (improvement in improvementsThatCanBePlacedHere){
+                textList += FormattedLine(improvement.name, improvement.makeLink(), indent=1)
+            }
+        }
+
         if (turnsInto != null) {
             textList += FormattedLine("Placed on [$turnsInto]", link="Terrain/$turnsInto")
         }
@@ -147,13 +159,8 @@ class Terrain : RulesetStatsObject() {
     /** Terrain filter matching is "pure" - input always returns same output, and it's called a bajillion times */
     val cachedMatchesFilterResult = HashMap<String, Boolean>()
 
-    fun matchesFilter(filter: String): Boolean {
-        val cachedAnswer = cachedMatchesFilterResult[filter]
-        if (cachedAnswer != null) return cachedAnswer
-        val newAnswer = MultiFilter.multiFilter(filter, { matchesSingleFilter(it) })
-        cachedMatchesFilterResult[filter] = newAnswer
-        return newAnswer
-    }
+    fun matchesFilter(filter: String): Boolean =
+        cachedMatchesFilterResult.getOrPut(filter) { MultiFilter.multiFilter(filter, ::matchesSingleFilter ) }
 
     /** Implements [UniqueParameterType.TerrainFilter][com.unciv.models.ruleset.unique.UniqueParameterType.TerrainFilter] */
     fun matchesSingleFilter(filter: String): Boolean {

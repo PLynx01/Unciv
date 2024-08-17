@@ -9,6 +9,7 @@ import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.logic.map.tile.Tile
 import com.unciv.models.ruleset.Building
 import com.unciv.models.ruleset.INonPerpetualConstruction
+import com.unciv.models.ruleset.PerpetualConstruction
 import com.unciv.models.ruleset.Victory
 import com.unciv.models.ruleset.nation.PersonalityValue
 import com.unciv.models.ruleset.tile.ResourceType
@@ -48,6 +49,8 @@ object Automation {
         val yieldStats = stats.clone()
         val civPersonality = city.civ.getPersonality()
         val cityStatsObj = city.cityStats
+        val civInfo = city.civ
+        val allTechsAreResearched = civInfo.tech.allTechsAreResearched()
 
         if (areWeRankingSpecialist) {
             // If you have the Food Bonus, count as 1 extra food production (base is 2food)
@@ -56,7 +59,7 @@ object Automation {
                     yieldStats.food -= (unique.params[0].toFloat() / 100f) * 2f // base 2 food per Pop
             // Specialist Happiness Percentage Change 0f-1f
             for (unique in localUniqueCache.forCityGetMatchingUniques(city, UniqueType.UnhappinessFromPopulationTypePercentageChange))
-                if (city.matchesFilter(unique.params[2]) && unique.params[1] == "Specialists")
+                if (unique.params[1] == "Specialists" && city.matchesFilter(unique.params[2]))
                     yieldStats.happiness -= (unique.params[0].toFloat() / 100f)  // relative val is negative, make positive
         }
 
@@ -72,40 +75,55 @@ object Automation {
 
         if (surplusFood > 0 && city.avoidGrowth) {
             yieldStats.food = 0f // don't need more food!
-        } else if (cityAIFocus in CityFocus.zeroFoodFocuses()) {
+        } else if (cityAIFocus in CityFocus.zeroFoodFocuses) {
             // Focus on non-food/growth
             if (surplusFood < 0)
                 yieldStats.food *= 8 // Starving, need Food, get to 0
             else
                 yieldStats.food /= 2
         } else if (!city.avoidGrowth) {
-            // NoFocus or Food/Growth Focus. Target +2 Food Surplus
-            if (surplusFood < 2)
-                yieldStats.food *= 8
-            else if (city.population.population < 5)
-                yieldStats.food *= 3
+            // NoFocus or Food/Growth Focus. Target +10 Food Surplus when happy
+            if (surplusFood < 0)
+                yieldStats.food *= 8 // Starving, need Food, get to 0
+            else if (surplusFood < 10 && city.civ.getHappiness() > -1)
+                yieldStats.food *= 2
+            else if (city.civ.getHappiness() < 0) {
+                // 75% of excess food is wasted when in negative happiness
+                yieldStats.food /= 4
+            }
         }
 
-        if (city.population.population < 5) {
+        if (city.population.population < 10) {
             // "small city" - we care more about food and less about global problems like gold science and culture
-            // Food already handled above. Science/Culture have low weights in Stats already
-            yieldStats.gold /= 2 // it's barely worth anything at this point
-        } else {
-            if (city.civ.gold < 0 && city.civ.stats.statsForNextTurn.gold <= 0)
-                yieldStats.gold *= 2 // We have a global problem
-
-            if (city.tiles.size < 12)
-                yieldStats.culture *= 2
-
-            if (city.civ.getHappiness() < 0)
-                yieldStats.happiness *= 2
+            // Food already handled above. Gold/Culture have low weights in Stats already
+            yieldStats.science /= 2
         }
 
-        for (stat in Stat.values()) {
+        if (city.civ.stats.statsForNextTurn.gold < 0) {
+            // We have a global problem, we need to deal with it before it leads to science loss
+            yieldStats.gold *= 2
+        }
+
+        if (city.civ.getHappiness() < 0) {
+            yieldStats.happiness *= 2
+        }
+
+        if (allTechsAreResearched) {
+            // Science is useless at this point
+            yieldStats.science *= 0
+        }
+
+        if (city.cityConstructions.getCurrentConstruction() is PerpetualConstruction) {
+            // With 4:1 conversion of production to science, production is overvalued by a factor (12*4)/7 = 6.9
+            yieldStats.production /= 6
+        }
+
+        for (stat in Stat.entries) {
             if (city.civ.wantsToFocusOn(stat))
                 yieldStats[stat] *= 2f
 
-            yieldStats[stat] *= civPersonality.scaledFocus(PersonalityValue[stat])
+            val scaledFocus = civPersonality.scaledFocus(PersonalityValue[stat])
+            if (scaledFocus != 1f) yieldStats[stat] *= scaledFocus
         }
 
         // Apply City focus
@@ -116,7 +134,7 @@ object Automation {
 
     fun tryTrainMilitaryUnit(city: City) {
         if (city.isPuppet) return
-        if ((city.cityConstructions.getCurrentConstruction() as? BaseUnit)?.isMilitary() == true)
+        if ((city.cityConstructions.getCurrentConstruction() as? BaseUnit)?.isMilitary == true)
             return // already training a military unit
         val chosenUnitName = chooseMilitaryUnit(city, city.civ.gameInfo.ruleset.units.values.asSequence())
         if (chosenUnitName != null)
@@ -174,8 +192,8 @@ object Automation {
         }
 
         val militaryUnits = availableUnits
-            .filter { it.isMilitary() }
-            .filterNot { removeShips && it.isWaterUnit() }
+            .filter { it.isMilitary }
+            .filterNot { removeShips && it.isWaterUnit }
             .filter { allowSpendingResource(city.civ, it) }
             .filterNot {
                 // filter out carrier-type units that can't attack if we don't need them
@@ -184,7 +202,7 @@ object Automation {
             }
             // Only now do we filter out the constructable units because that's a heavier check
             .filter { it.isBuildable(city.cityConstructions) }
-            .toList()
+            .toList().asSequence()
 
         val chosenUnit: BaseUnit
         if (!city.civ.isAtWar()
@@ -216,7 +234,7 @@ object Automation {
 
     /** Determines whether [civInfo] should be allocating military to fending off barbarians */
     fun afraidOfBarbarians(civInfo: Civilization): Boolean {
-        if (civInfo.isCityState() || civInfo.isBarbarian())
+        if (civInfo.isCityState || civInfo.isBarbarian)
             return false
 
         if (civInfo.gameInfo.gameParameters.noBarbarians)
@@ -233,8 +251,8 @@ object Automation {
         if (civInfo.gameInfo.turns > 120 * speed.barbarianModifier * multiplier)
             multiplier /= 2
 
-        // If we have a lot of, or no cities we are not afraid
-        if (civInfo.cities.isEmpty() || civInfo.cities.size >= 4 * multiplier)
+        // If we have no cities or a lot of units we are not afraid
+        if (civInfo.cities.isEmpty() || civInfo.units.getCivUnits().count() >= 4 * multiplier)
             return false
 
         // If we have vision of our entire starting continent (ish) we are not afraid
@@ -280,7 +298,7 @@ object Automation {
      *  [construction] for [civInfo], assumes that we are actually able to do so. */
     fun allowSpendingResource(civInfo: Civilization, construction: INonPerpetualConstruction, cityInfo: City? = null): Boolean {
         // City states do whatever they want
-        if (civInfo.isCityState())
+        if (civInfo.isCityState)
             return true
 
         // Spaceships are always allowed
@@ -369,7 +387,9 @@ object Automation {
     fun getTileForConstructionImprovement(city: City, improvement: TileImprovement): Tile? {
         val localUniqueCache = LocalUniqueCache()
         return city.getTiles().filter {
-            it.improvementFunctions.canBuildImprovement(improvement, city.civ)
+            it.getTileImprovement()?.hasUnique(UniqueType.AutomatedUnitsWillNotReplace,
+                    StateForConditionals(city.civ, city, tile = it)) == false
+                && it.improvementFunctions.canBuildImprovement(improvement, city.civ)
         }.maxByOrNull {
             rankTileForCityWork(it, city, localUniqueCache)
         }
@@ -411,12 +431,12 @@ object Automation {
         // Resources are good: less points
         if (tile.hasViewableResource(city.civ)) {
             if (tile.tileResource.resourceType != ResourceType.Bonus) score -= 105
-            else if (distance <= 3) score -= 104
+            else if (distance <= city.getWorkRange()) score -= 104
         } else {
             // Water tiles without resources aren't great
             if (tile.isWater) score += 25
             // Can't work it anyways
-            if (distance > 3) score += 100
+            if (distance > city.getWorkRange()) score += 100
         }
 
         if (tile.naturalWonder != null) score -= 105
@@ -430,12 +450,12 @@ object Automation {
         for (adjacentTile in tile.neighbors.filter { it.getOwner() == null }) {
             val adjacentDistance = city.getCenterTile().aerialDistanceTo(adjacentTile)
             if (adjacentTile.hasViewableResource(city.civ) &&
-                (adjacentDistance < 3 ||
+                (adjacentDistance < city.getWorkRange() ||
                     adjacentTile.tileResource.resourceType != ResourceType.Bonus
                 )
             ) score -= 1
             if (adjacentTile.naturalWonder != null) {
-                if (adjacentDistance < 3) adjacentNaturalWonder = true
+                if (adjacentDistance < city.getWorkRange()) adjacentNaturalWonder = true
                 score -= 1
             }
         }

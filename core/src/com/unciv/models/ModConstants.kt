@@ -1,5 +1,7 @@
 package com.unciv.models
 
+import java.lang.reflect.Modifier
+
 /** Used as a member of [ModOptions][com.unciv.models.ruleset.ModOptions] for moddable "constants" - factors in formulae and such.
  *
  *  When combining mods, this is [merge]d _per constant/field_, not as entire object like other RulesetObjects.
@@ -8,8 +10,9 @@ package com.unciv.models
  *
  *  Supports equality contract to enable the Json serializer to recognize unchanged defaults.
  *
- *  Methods [merge], [equals] and [hashCode] are done through reflection so adding a field will not need to update these methods
- *  (overhead is not a factor, these routines run very rarely).
+ *  Methods [merge], [equals], [hashCode] and [toString] are done through reflection!
+ *  Therefore, adding a field will not need to update these methods, but all members ***must*** conform to the equality contract.
+ *  (overhead is not a factor, these routines run very rarely. The alternative would be to make the entire thing a data class.)
  */
 class ModConstants {
     // Max amount of experience that can be gained from combat with barbarians
@@ -44,6 +47,19 @@ class ModConstants {
     // First constant is for cities on the same landmass, the second is for cities on different continents.
     var minimalCityDistance = 3
     var minimalCityDistanceOnDifferentContinents = 2
+
+    var baseCityBombardRange = 2
+    var cityWorkRange = 3
+    var cityExpandRange = 5
+
+    // Modifies how much the gold value of a one-sided trade is applied to the gifts diplomatic modifier.
+    // Eg: One side offers a city, resource or gold for nothing in return.
+    var goldGiftMultiplier = 1f
+    // Modifies how much the gold value of a regular trade is applied to the gifts diplomatic modifier.
+    var goldGiftTradeMultiplier = .8f
+    // Modifies how quickly the GaveUsGifts dimplomacy modifier runs out. A higher value makes it run out quicker.
+    // Normally the gifts reduced by ~2.5% per turn depending on the diplomatic relations with the default value.
+    var goldGiftDegradationMultiplier = 1f
 
     // Constants used to calculate Unit Upgrade gold Cost (can only be modded all-or-nothing)
     // This is a data class for one reason only: The equality implementation enables Gdx Json to omit it when default (otherwise only the individual fields are omitted)
@@ -84,8 +100,24 @@ class ModConstants {
 
     var workboatAutomationSearchMaxTiles = 20
 
+    // Civilization
+    var minimumWarDuration = 10
+    var baseTurnsUntilRevolt = 4
+    var cityStateElectionTurns = 15
+
+    // Espionage
+    var maxSpyRank = 3
+    // How much of a skill bonus each rank gives.
+    // Rank 0 is 100%, rank 1 is 130%, and so on for stealing technology.
+    // Half as much for a coup.
+    var spyRankSkillPercentBonus = 30
+
+    // UI: If set >= 0, ImprovementPicker will silently skip improvements whose tech requirement is more advanced than your current Era + this
+    var maxImprovementTechErasForward = -1
+
     fun merge(other: ModConstants) {
         for (field in this::class.java.declaredFields) {
+            if (field.modifiers and Modifier.STATIC != 0) continue
             val value = field.get(other)
             if (field.get(defaults).equals(value)) continue
             field.set(this, value)
@@ -99,8 +131,14 @@ class ModConstants {
     }
 
     override fun hashCode(): Int {
+        // Note: This is of course heavily dependent on iteration order.
+        // Java reflection uses declaration order, but its doc claims "The elements in the returned array are not sorted and are not in any particular order."
+        // kotlin reflection is alphabetically sorted. Embarrassingly, the best documentation guarantee seems to be: https://youtrack.jetbrains.com/issue/KT-41042
+        // But - let's rely on at least the order being deterministic over instances of the same class in both reflection engines, so which we use is moot.
+        // A kotlin version of this (different result!): `this::class.declaredMemberProperties.fold(0) { a, b -> a * 31 + b.getter.call(this).hashCode() }`
         var result = 0
         for (field in this::class.java.declaredFields) {
+            if (field.modifiers and Modifier.STATIC != 0) continue
             result = result * 31 + field.get(this).hashCode()
         }
         return result
@@ -108,9 +146,27 @@ class ModConstants {
 
     private fun equalsReflected(other: ModConstants): Boolean {
         for (field in this::class.java.declaredFields) {
+            if (field.modifiers and Modifier.STATIC != 0) continue
             if (!field.get(this).equals(field.get(other))) return false
         }
         return true
+    }
+
+    /** Debug only so far */
+    override fun toString(): String {
+        val sb = StringBuilder()
+        sb.append('{')
+        for (field in this::class.java.declaredFields) {
+            if (field.modifiers and Modifier.STATIC != 0) continue
+            if (field.get(this).equals(field.get(defaults))) continue
+            sb.append(field.name)
+            sb.append(':')
+            sb.append(field.get(this))
+            sb.append(',')
+        }
+        sb.deleteCharAt(sb.length - 1) // remove extra ',' with StringBuilder method
+        sb.append('}')
+        return sb.toString().takeUnless { it == "}" } ?: "defaults"
     }
 
     companion object {

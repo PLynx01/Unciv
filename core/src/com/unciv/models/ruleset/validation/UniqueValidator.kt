@@ -86,12 +86,12 @@ class UniqueValidator(val ruleset: Ruleset) {
             )
         }
 
-        for (conditional in unique.conditionals) {
+        for (conditional in unique.modifiers) {
             addConditionalErrors(conditional, rulesetErrors, prefix, unique, uniqueContainer, reportRulesetSpecificErrors)
         }
 
         if (unique.type in MapUnitCache.UnitMovementUniques
-                && unique.conditionals.any { it.type != UniqueType.ConditionalOurUnit || it.params[0] !in Constants.all }
+                && unique.modifiers.any { it.type != UniqueType.ConditionalOurUnit || it.params[0] !in Constants.all }
             )
             // (Stay silent if the only conditional is `<for [All] units>` - as in G&K Denmark)
             // Not necessarily even a problem, but yes something mod maker should be aware of
@@ -109,6 +109,16 @@ class UniqueValidator(val ruleset: Ruleset) {
 
         return rulesetErrors
     }
+
+    val resourceUniques = setOf(UniqueType.ProvidesResources, UniqueType.ConsumesResources,
+        UniqueType.DoubleResourceProduced, UniqueType.StrategicResourcesIncrease)
+    val resourceConditionals = setOf(
+        UniqueType.ConditionalWithResource,
+        UniqueType.ConditionalWithoutResource,
+        UniqueType.ConditionalWhenBetweenStatResource,
+        UniqueType.ConditionalWhenAboveAmountStatResource,
+        UniqueType.ConditionalWhenBelowAmountStatResource,
+    )
 
     private fun addConditionalErrors(
         conditional: Unique,
@@ -131,7 +141,7 @@ class UniqueValidator(val ruleset: Ruleset) {
             var text = "$prefix contains the conditional \"${conditional.text}\"," +
                 " which is of an unknown type!"
 
-            val similarConditionals = UniqueType.values().filter {
+            val similarConditionals = UniqueType.entries.filter {
                 getRelativeTextDistance(
                     it.placeholderText,
                     conditional.placeholderText
@@ -162,6 +172,14 @@ class UniqueValidator(val ruleset: Ruleset) {
                 RulesetErrorSeverity.Warning, uniqueContainer, unique
             )
 
+        if (unique.type in resourceUniques && conditional.type in resourceConditionals
+            && ruleset.tileResources[conditional.params.last()]?.hasUnique(UniqueType.CityResource) == true)
+            rulesetErrors.add(
+                "$prefix contains the conditional \"${conditional.text}\"," +
+                    " which references a citywide resource. This is not a valid conditional for a resource uniques, " +
+                    "as it causes a recursive evaluation loop.",
+                RulesetErrorSeverity.Error, uniqueContainer, unique)
+
         val conditionalComplianceErrors =
             getComplianceErrors(conditional)
 
@@ -170,14 +188,14 @@ class UniqueValidator(val ruleset: Ruleset) {
                 continue
 
             rulesetErrors.add(
-                "$prefix contains conditional \"${conditional.text}\"." +
+                "$prefix contains modifier \"${conditional.text}\"." +
                 " This contains the parameter ${complianceError.parameterName} which does not fit parameter type" +
                 " ${complianceError.acceptableParameterTypes.joinToString(" or ") { it.parameterName }} !",
                 complianceError.errorSeverity.getRulesetErrorSeverity(), uniqueContainer, unique
             )
         }
 
-        addDeprecationAnnotationErrors(conditional, "$prefix contains conditional \"${conditional.text}\" which", rulesetErrors, uniqueContainer)
+        addDeprecationAnnotationErrors(conditional, "$prefix contains modifier \"${conditional.text}\" which", rulesetErrors, uniqueContainer)
     }
 
     private fun addDeprecationAnnotationErrors(
@@ -264,12 +282,12 @@ class UniqueValidator(val ruleset: Ruleset) {
     private fun isFilteringUniqueAllowed(unique: Unique): Boolean {
         // Isolate this decision, to allow easy change of approach
         // This says: Must have no conditionals or parameters, and is used in any "filtering" parameter of another Unique
-        if (unique.conditionals.isNotEmpty() || unique.params.isNotEmpty()) return false
+        if (unique.modifiers.isNotEmpty() || unique.params.isNotEmpty()) return false
         return unique.text in allUniqueParameters // referenced at least once from elsewhere
     }
 
     private fun tryFixUnknownUnique(unique: Unique, uniqueContainer: IHasUniques?, prefix: String): RulesetErrorList {
-        val similarUniques = UniqueType.values().filter {
+        val similarUniques = UniqueType.entries.filter {
             getRelativeTextDistance(
                 it.placeholderText,
                 unique.placeholderText
@@ -290,8 +308,8 @@ class UniqueValidator(val ruleset: Ruleset) {
                     "$prefix looks like it may be a misspelling of:\n" +
                         similarUniques.joinToString("\n") { uniqueType ->
                             var text = "\"${uniqueType.text}"
-                            if (unique.conditionals.isNotEmpty())
-                                text += " " + unique.conditionals.joinToString(" ") { "<${it.text}>" }
+                            if (unique.modifiers.isNotEmpty())
+                                text += " " + unique.modifiers.joinToString(" ") { "<${it.text}>" }
                             text += "\""
                             if (uniqueType.getDeprecationAnnotation() != null) text += " (Deprecated)"
                             return@joinToString text

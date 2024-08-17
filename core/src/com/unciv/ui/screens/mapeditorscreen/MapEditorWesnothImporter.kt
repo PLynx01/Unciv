@@ -1,14 +1,14 @@
 package com.unciv.ui.screens.mapeditorscreen
 
-import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.files.FileHandle
 import com.unciv.Constants
+import com.unciv.UncivGame
 import com.unciv.json.json
 import com.unciv.logic.UncivShowableException
 import com.unciv.logic.files.FileChooser
 import com.unciv.logic.map.HexMath
 import com.unciv.logic.map.MapShape
-import com.unciv.logic.map.MapSizeNew
+import com.unciv.logic.map.MapSize
 import com.unciv.logic.map.MapType
 import com.unciv.logic.map.TileMap
 import com.unciv.logic.map.tile.Tile
@@ -55,7 +55,7 @@ class MapEditorWesnothImporter(private val editorScreen: MapEditorScreen) : Disp
         json().fromJson(
             linkedMapOf<String,ArrayList<String>>()::class.java,
             arrayListOf<String>()::class.java,  // else we get Gdx.Array despite the class above stating ArrayList
-            Gdx.files.local("jsons/WesnothImportMappings.json")
+            UncivGame.Current.files.getLocalFile("jsons/WesnothImportMappings.json")
         )
     }
 
@@ -118,7 +118,7 @@ class MapEditorWesnothImporter(private val editorScreen: MapEditorScreen) : Disp
         map.mapParameters.apply {
             type = MapType.empty
             shape = MapShape.rectangular
-            mapSize = MapSizeNew(width, height)
+            mapSize = MapSize(width, height)
         }
 
         val colOffset = 1 + width / 2

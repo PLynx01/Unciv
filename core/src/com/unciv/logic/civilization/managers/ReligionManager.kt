@@ -322,7 +322,7 @@ class ReligionManager : IsPartOfGameInfoSerialization {
 
         // Counter of the number of available beliefs of each type
         val availableBeliefs = Counter<BeliefType>()
-        for (type in BeliefType.values()) {
+        for (type in BeliefType.entries) {
             if (type == BeliefType.None) continue
             availableBeliefs[type] = numberOfBeliefsAvailable(type)
         }
@@ -375,16 +375,7 @@ class ReligionManager : IsPartOfGameInfoSerialization {
         if (religionState == ReligionState.None)
             foundPantheon(beliefs[0].name, useFreeBeliefs)  // makes religion non-null
         // add beliefs (religion exists at this point)
-        religion!!.followerBeliefs.addAll(
-            beliefs
-                .filter { it.type == BeliefType.Pantheon || it.type == BeliefType.Follower }
-                .map { it.name }
-        )
-        religion!!.founderBeliefs.addAll(
-            beliefs
-                .filter { it.type == BeliefType.Founder || it.type == BeliefType.Enhancer }
-                .map { it.name }
-        )
+        religion!!.addBeliefs(beliefs)
 
         when (religionState) {
             ReligionState.None -> {
@@ -407,7 +398,7 @@ class ReligionManager : IsPartOfGameInfoSerialization {
 
         for (unique in civInfo.getTriggeredUniques(UniqueType.TriggerUponAdoptingPolicyOrBelief))
             for (belief in beliefs)
-                if (unique.conditionals.any {it.type == UniqueType.TriggerUponAdoptingPolicyOrBelief && it.params[0] == belief.name})
+                if (unique.getModifiers(UniqueType.TriggerUponAdoptingPolicyOrBelief).any { it.params[0] == belief.name})
                     UniqueTriggerActivation.triggerUnique(unique, civInfo,
                         triggerNotificationText = "due to adopting [${belief.name}]")
 
@@ -423,8 +414,7 @@ class ReligionManager : IsPartOfGameInfoSerialization {
         val newReligion = Religion(name, civInfo.gameInfo, civInfo.civName)
         newReligion.displayName = displayName
         if (religion != null) {
-            newReligion.followerBeliefs.addAll(religion!!.followerBeliefs)
-            newReligion.founderBeliefs.addAll(religion!!.founderBeliefs)
+            newReligion.addBeliefs(religion!!.getAllBeliefsOrdered().asIterable())
         }
 
         religion = newReligion

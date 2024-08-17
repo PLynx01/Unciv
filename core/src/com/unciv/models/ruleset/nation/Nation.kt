@@ -162,7 +162,7 @@ class Nation : RulesetObject() {
             val bonuses = uniqueMap.getAllUniques().filterNot { it.isHiddenToUsers() }
             if (bonuses.none()) return
             textList += FormattedLine()
-            textList += FormattedLine("{$header:} ")
+            textList += FormattedLine("{$header} ")
             for (unique in bonuses) {
                 textList += FormattedLine(unique, indent = 1)
                 if (unique.type == UniqueType.CityStateUniqueLuxury) showResources = true
@@ -192,14 +192,15 @@ class Nation : RulesetObject() {
 
     private fun getUniqueBuildingsText(ruleset: Ruleset) = sequence {
         for (building in ruleset.buildings.values) {
-            if (building.uniqueTo != name) continue
+            if (building.uniqueTo == null) continue
+            if (!matchesFilter(building.uniqueTo!!)) continue
             if (building.isHiddenFromCivilopedia(ruleset)) continue
             yield(FormattedLine(separator = true))
             yield(FormattedLine("{${building.name}} -", link = building.makeLink()))
             if (building.replaces != null && ruleset.buildings.containsKey(building.replaces!!)) {
                 val originalBuilding = ruleset.buildings[building.replaces!!]!!
                 yield(FormattedLine("Replaces [${originalBuilding.name}]", link = originalBuilding.makeLink(), indent = 1))
-                yieldAll(BuildingDescriptions.getDifferences(ruleset, originalBuilding, building))
+                yieldAll(BuildingDescriptions.getDifferences(originalBuilding, building))
                 yield(FormattedLine())
             } else if (building.replaces != null) {
                 yield(FormattedLine("Replaces [${building.replaces}], which is not found in the ruleset!", indent = 1))
@@ -211,7 +212,8 @@ class Nation : RulesetObject() {
 
     private fun getUniqueUnitsText(ruleset: Ruleset) = sequence {
         for (unit in ruleset.units.values) {
-            if (unit.uniqueTo != name || unit.isHiddenFromCivilopedia(ruleset)) continue
+            if (unit.isHiddenFromCivilopedia(ruleset)) continue
+            if (unit.uniqueTo != null && !matchesFilter(unit.uniqueTo!!)) continue
             yield(FormattedLine(separator = true))
             yield(FormattedLine("{${unit.name}} -", link = "Unit/${unit.name}"))
             if (unit.replaces != null && ruleset.units.containsKey(unit.replaces!!)) {

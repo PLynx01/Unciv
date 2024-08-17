@@ -12,7 +12,7 @@ import com.unciv.models.stats.Stat
 import com.unciv.models.stats.Stats
 import com.unciv.ui.components.extensions.toPercent
 
-fun Iterable<Pair<String, Stats>>.toStats(): Stats {
+fun List<Pair<String, Stats>>.toStats(): Stats {
     val stats = Stats()
     for ((_, statsToAdd) in this)
         stats.add(statsToAdd)
@@ -77,7 +77,7 @@ class TileStatFunctions(val tile: Tile) {
             for (unique in statsFromTilesUniques + statsFromObjectsUniques + statsFromTilesWithoutUniques) {
                 val tileType = unique.params[1]
                 if (tile.matchesFilter(tileType, observingCiv, true))
-                    listOfStats.add("{${unique.sourceObjectName}} ({${unique.text}})" to unique.stats)
+                    listOfStats.add("{${unique.sourceObjectName}} ({${unique.getDisplayText()}})" to unique.stats)
                 else if (improvement != null && improvement.matchesFilter(tileType))
                     improvementStats.add(unique.stats)
                 else if (road != null && road.matchesFilter(tileType))
@@ -118,11 +118,14 @@ class TileStatFunctions(val tile: Tile) {
         if (road != null) listOfStats.add(road.name to roadStats)
         if (improvement != null) listOfStats.add(improvement.name to improvementStats)
 
-        val statsFromMinimum = missingFromMinimum(listOfStats.toStats(), minimumStats)
-        listOfStats.add("Minimum" to statsFromMinimum)
+        if (minimumStats != Stats.ZERO) {
+            val statsFromMinimum = missingFromMinimum(listOfStats.toStats(), minimumStats)
+            listOfStats.add("Minimum" to statsFromMinimum)
+        }
 
-        if (observingCiv != null &&
-            listOfStats.toStats().gold != 0f && observingCiv.goldenAges.isGoldenAge())
+        if (observingCiv != null && observingCiv.goldenAges.isGoldenAge()
+            && listOfStats.toStats().gold != 0f
+        )
             listOfStats.add("Golden Age" to Stats(gold = 1f))
 
         // To ensure that the original stats (in uniques, terrains, etc) are not modified in getTileStats, we clone them all
@@ -133,7 +136,7 @@ class TileStatFunctions(val tile: Tile) {
     private fun missingFromMinimum(current: Stats, minimumStats: Stats): Stats {
         // Note: Not `for ((stat, value) in other)` - that would skip zero values
         val missingStats = Stats()
-        for (stat in Stat.values()) {
+        for (stat in Stat.entries) {
             if (current[stat] < minimumStats[stat])
                 missingStats[stat] = minimumStats[stat] - current[stat]
         }
@@ -147,7 +150,7 @@ class TileStatFunctions(val tile: Tile) {
         val list = arrayListOf(terrain.name to (terrain as Stats))
 
         for (unique in terrain.getMatchingUniques(UniqueType.Stats, stateForConditionals)) {
-            list.add(terrain.name+": "+unique.text to unique.stats)
+            list.add(terrain.name+": "+unique.getDisplayText() to unique.stats)
         }
         return list
     }
@@ -203,7 +206,7 @@ class TileStatFunctions(val tile: Tile) {
             val cachedAllStatPercentFromObjectCityUniques = uniqueCache.forCityGetMatchingUniques(
                 city, UniqueType.AllStatsPercentFromObject, stateForConditionals)
             for (unique in cachedAllStatPercentFromObjectCityUniques) {
-                for (stat in Stat.values())
+                for (stat in Stat.entries)
                     addStats(unique.params[1], stat, unique.params[0].toFloat())
             }
 
@@ -217,7 +220,7 @@ class TileStatFunctions(val tile: Tile) {
             val cachedAllStatPercentFromObjectCivUniques = uniqueCache.forCivGetMatchingUniques(
                 observingCiv, UniqueType.AllStatsPercentFromObject, stateForConditionals)
             for (unique in cachedAllStatPercentFromObjectCivUniques) {
-                for (stat in Stat.values())
+                for (stat in Stat.entries)
                     addStats(unique.params[1], stat, unique.params[0].toFloat())
             }
         }
@@ -266,14 +269,17 @@ class TileStatFunctions(val tile: Tile) {
         improvement: TileImprovement,
         observingCiv: Civilization,
         city: City?,
-        cityUniqueCache: LocalUniqueCache = LocalUniqueCache(false)): Stats {
+        cityUniqueCache: LocalUniqueCache = LocalUniqueCache(false),
+        /** Provide this for performance */
+        currentTileStats: Stats? = null): Stats {
 
-        val currentStats = getTileStats(city, observingCiv, cityUniqueCache)
+        val currentStats = currentTileStats
+            ?: getTileStats(city, observingCiv, cityUniqueCache)
 
         val tileClone = tile.clone()
         tileClone.setTerrainTransients()
 
-        tileClone.changeImprovement(improvement.name)
+        tileClone.setImprovement(improvement.name)
         val futureStats = tileClone.stats.getTileStats(city, observingCiv, cityUniqueCache)
 
         return futureStats.minus(currentStats)
@@ -290,7 +296,7 @@ class TileStatFunctions(val tile: Tile) {
         if (tile.hasViewableResource(observingCiv) && tile.tileResource.isImprovedBy(improvement.name)
                 && tile.tileResource.improvementStats != null
         )
-            stats.add(tile.tileResource.improvementStats!!.clone()) // resource-specific improvement
+            stats.add(tile.tileResource.improvementStats!!) // resource-specific improvement
 
         val conditionalState = StateForConditionals(civInfo = observingCiv, city = city, tile = tile)
         for (unique in improvement.getMatchingUniques(UniqueType.Stats, conditionalState)) {

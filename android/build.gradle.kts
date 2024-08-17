@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    compileSdk = 33
+    compileSdk = 34
     sourceSets {
         getByName("main").apply {
             manifest.srcFile("AndroidManifest.xml")
@@ -27,10 +27,10 @@ android {
         resources.excludes += "DebugProbesKt.bin"
     }
     defaultConfig {
-        namespace = "com.unciv.app"
-        applicationId = "com.unciv.app"
+        namespace = BuildConfig.identifier
+        applicationId = BuildConfig.identifier
         minSdk = 21
-        targetSdk = 33 // See #5044
+        targetSdk = 34 // See #5044
         versionCode = BuildConfig.appCodeNumber
         versionName = BuildConfig.appVersion
 
@@ -47,7 +47,7 @@ android {
 
     signingConfigs {
         getByName("debug") {
-            storeFile = rootProject.file("debug.keystore")
+            storeFile = rootProject.file("android/debug.keystore")
             keyAlias = "androiddebugkey"
             keyPassword = "android"
             storePassword = "android"

@@ -35,7 +35,6 @@ import com.unciv.ui.components.extensions.withoutItem
 import com.unciv.ui.components.fonts.Fonts
 import com.unciv.ui.screens.civilopediascreen.CivilopediaCategories
 import com.unciv.ui.screens.civilopediascreen.FormattedLine
-import com.unciv.ui.screens.worldscreen.WorldScreen
 import kotlin.math.ceil
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -156,7 +155,7 @@ class CityConstructions : IsPartOfGameInfoSerialization {
         if (buildable)
             lines += (if (currentProgress == 0) "" else "$currentProgress/") +
                     "$cost${Fonts.production} $turnsToConstruction${Fonts.turn}"
-        val otherStats = Stat.values().filter {
+        val otherStats = Stat.entries.filter {
             (it != Stat.Gold || !buildable) &&  // Don't show rush cost for consistency
             construction.canBePurchasedWithStat(city, it)
         }.joinToString(" / ") { "${construction.getStatBuyCost(city, it)}${it.character}" }
@@ -189,7 +188,7 @@ class CityConstructions : IsPartOfGameInfoSerialization {
 
     fun isAllBuilt(buildingList: List<String>): Boolean = buildingList.all { isBuilt(it) }
 
-    fun isBuilt(buildingName: String): Boolean = builtBuildingObjects.any { it.name == buildingName }
+    fun isBuilt(buildingName: String): Boolean = builtBuildings.contains(buildingName)
 
     // Note: There was a isEnqueued here functionally identical to isBeingConstructedOrEnqueued,
     // which was calling both isEnqueued and isBeingConstructed - BUT: currentConstructionFromQueue is just a
@@ -289,7 +288,7 @@ class CityConstructions : IsPartOfGameInfoSerialization {
             val cityStats = CityStats(city)
             cityStats.statsFromTiles = city.cityStats.statsFromTiles // take as-is
             val construction = city.cityConstructions.getConstruction(constructionName)
-            cityStats.update(construction, false)
+            cityStats.update(construction, false, false)
             cityStatsForConstruction = cityStats.currentCityStats
         }
 
@@ -338,7 +337,7 @@ class CityConstructions : IsPartOfGameInfoSerialization {
             if (inProgressConstructions.containsKey(currentConstructionFromQueue)
                     && inProgressConstructions[currentConstructionFromQueue]!! >= productionCost) {
                 val potentialOverflow = inProgressConstructions[currentConstructionFromQueue]!! - productionCost
-                if (constructionComplete(construction)) {
+                if (completeConstruction(construction)) {
                     // See the URL below for explanation for this cap
                     // https://forums.civfanatics.com/threads/hammer-overflow.419352/
                     val maxOverflow = maxOf(productionCost, city.cityStats.currentCityStats.production.roundToInt())
@@ -458,7 +457,7 @@ class CityConstructions : IsPartOfGameInfoSerialization {
     }
 
     /** Returns false if we tried to construct a unit but it has nowhere to go */
-    fun constructionComplete(construction: INonPerpetualConstruction): Boolean {
+    fun completeConstruction(construction: INonPerpetualConstruction): Boolean {
         val managedToConstruct = construction.postBuildEvent(this)
         if (!managedToConstruct) return false
 
@@ -563,13 +562,12 @@ class CityConstructions : IsPartOfGameInfoSerialization {
                 UniqueTriggerActivation.triggerUnique(unique, city, triggerNotificationText = triggerNotificationText)
 
         for (unique in city.civ.getTriggeredUniques(UniqueType.TriggerUponConstructingBuilding, stateForConditionals))
-            if (unique.conditionals.any {it.type == UniqueType.TriggerUponConstructingBuilding && building.matchesFilter(it.params[0])})
+            if (unique.getModifiers(UniqueType.TriggerUponConstructingBuilding).any { building.matchesFilter(it.params[0])} )
                 UniqueTriggerActivation.triggerUnique(unique, city, triggerNotificationText = triggerNotificationText)
 
         for (unique in city.civ.getTriggeredUniques(UniqueType.TriggerUponConstructingBuildingCityFilter, stateForConditionals))
-            if (unique.conditionals.any {it.type == UniqueType.TriggerUponConstructingBuildingCityFilter
-                    && building.matchesFilter(it.params[0])
-                    && city.matchesFilter(it.params[1])})
+            if (unique.getModifiers(UniqueType.TriggerUponConstructingBuildingCityFilter).any {
+                    building.matchesFilter(it.params[0]) && city.matchesFilter(it.params[1]) })
                 UniqueTriggerActivation.triggerUnique(unique, city, triggerNotificationText = triggerNotificationText)
     }
 
@@ -697,6 +695,22 @@ class CityConstructions : IsPartOfGameInfoSerialization {
         validateConstructionQueue()
 
         return true
+    }
+
+
+    /** This is the *one true test* of "can we buty this construction"
+     * This tests whether the buy button should be _enabled_ */
+    fun isConstructionPurchaseAllowed(construction: INonPerpetualConstruction, stat: Stat, constructionBuyCost: Int): Boolean {
+        return when {
+            city.isPuppet && !city.getMatchingUniques(UniqueType.MayBuyConstructionsInPuppets).any() -> false
+            city.isInResistance() -> false
+            !construction.isPurchasable(city.cityConstructions) -> false    // checks via 'rejection reason'
+            construction is BaseUnit && !city.canPlaceNewUnit(construction) -> false
+            !construction.canBePurchasedWithStat(city, stat) -> false
+            city.civ.gameInfo.gameParameters.godMode -> true
+            constructionBuyCost == 0 -> true
+            else -> city.getStatReserve(stat) >= constructionBuyCost
+        }
     }
 
     private fun removeCurrentConstruction() = removeFromQueue(0, true)
@@ -852,8 +866,7 @@ class CityConstructions : IsPartOfGameInfoSerialization {
         val tileForImprovement = getTileForImprovement(improvement.name) ?: return
         tileForImprovement.stopWorkingOnImprovement()  // clears mark
         if (removeOnly) return
-        tileForImprovement.changeImprovement(improvement.name, city.civ)
-        city.civ.lastSeenImprovement[tileForImprovement.position] = improvement.name
+        tileForImprovement.setImprovement(improvement.name, city.civ)
         // If bought the worldscreen will not have been marked to update, and the new improvement won't show until later...
         GUI.setUpdateWorldOnNextRender()
     }

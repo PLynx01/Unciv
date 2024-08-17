@@ -46,10 +46,10 @@ object UnitActionsFromUniques {
         // Spain should still be able to build Conquistadors in a one city challenge - but can't settle them
         if (unit.civ.isOneCityChallenger() && unit.civ.hasEverOwnedOriginalCapital) return null
 
-        if (unit.currentMovement <= 0 || !tile.canBeSettled())
+        if (!unit.hasMovement() || !tile.canBeSettled())
             return UnitAction(UnitActionType.FoundCity, 80f, action = null)
 
-        val hasActionModifiers = unique.conditionals.any { it.type?.targetTypes?.contains(
+        val hasActionModifiers = unique.modifiers.any { it.type?.targetTypes?.contains(
             UniqueTarget.UnitActionModifier
         ) == true }
         val foundAction = {
@@ -106,7 +106,7 @@ object UnitActionsFromUniques {
     private fun getLeadersWePromisedNotToSettleNear(civInfo: Civilization, tile: Tile): String? {
         val leadersWePromisedNotToSettleNear = HashSet<String>()
         for (otherCiv in civInfo.getKnownCivs().filter { it.isMajorCiv() && !civInfo.isAtWarWith(it) }) {
-            val diplomacyManager = otherCiv.getDiplomacyManager(civInfo)
+            val diplomacyManager = otherCiv.getDiplomacyManager(civInfo)!!
             if (diplomacyManager.hasFlag(DiplomacyFlags.AgreedToNotSettleNearUs)) {
                 val citiesWithin6Tiles = otherCiv.cities
                     .filter { it.getCenterTile().aerialDistanceTo(tile) <= 6 }
@@ -126,7 +126,7 @@ object UnitActionsFromUniques {
             action = {
                 unit.action = UnitActionType.SetUp.value
                 unit.useMovementPoints(1f)
-            }.takeIf { unit.currentMovement > 0 && !isSetUp })
+            }.takeIf { unit.hasMovement() && !isSetUp })
         )
     }
 
@@ -168,9 +168,9 @@ object UnitActionsFromUniques {
     internal fun getTriggerUniqueActions(unit: MapUnit, tile: Tile) = sequence {
         for (unique in unit.getUniques()) {
             // not a unit action
-            if (unique.conditionals.none { it.type?.targetTypes?.contains(UniqueTarget.UnitActionModifier) == true }) continue
+            if (unique.modifiers.none { it.type?.targetTypes?.contains(UniqueTarget.UnitActionModifier) == true }) continue
             // extends an existing unit action
-            if (unique.conditionals.any { it.type == UniqueType.UnitActionExtraLimitedTimes }) continue
+            if (unique.hasModifier(UniqueType.UnitActionExtraLimitedTimes)) continue
             if (!unique.isTriggerable) continue
             if (!unique.conditionalsApply(StateForConditionals(civInfo = unit.civ, unit = unit, tile = unit.currentTile))) continue
             if (!UnitActionModifiers.canUse(unit, unique)) continue
@@ -179,23 +179,26 @@ object UnitActionsFromUniques {
                 UniqueType.OneTimeEnterGoldenAgeTurns -> {
                     unique.placeholderText.fillPlaceholders(
                         unit.civ.goldenAges.calculateGoldenAgeLength(
-                            unique.params[0].toInt()).toString())
+                            unique.params[0].toInt()).tr())
                     }
-                UniqueType.OneTimeGainStatSpeed -> {
-                    val stat = unique.params[1]
-                    val modifier = unit.civ.gameInfo.speed.statCostModifiers[Stat.safeValueOf(stat)]
-                        ?: unit.civ.gameInfo.speed.modifier
-                    UniqueType.OneTimeGainStat.placeholderText.fillPlaceholders(
-                        (unique.params[0].toInt() * modifier).toInt().toString(), stat
-                    )
+                UniqueType.OneTimeGainStat -> {
+                    if (unique.hasModifier(UniqueType.ModifiedByGameSpeed)) {
+                        val stat = unique.params[1]
+                        val modifier = unit.civ.gameInfo.speed.statCostModifiers[Stat.safeValueOf(stat)]
+                            ?: unit.civ.gameInfo.speed.modifier
+                        UniqueType.OneTimeGainStat.placeholderText.fillPlaceholders(
+                            (unique.params[0].toInt() * modifier).toInt().tr(), stat
+                        )
+                    }
+                    else unique.text.removeConditionals()
                 }
                 UniqueType.OneTimeGainStatRange -> {
                     val stat = unique.params[2]
                     val modifier = unit.civ.gameInfo.speed.statCostModifiers[Stat.safeValueOf(stat)]
                         ?: unit.civ.gameInfo.speed.modifier
                     unique.placeholderText.fillPlaceholders(
-                        (unique.params[0].toInt() * modifier).toInt().toString(),
-                        (unique.params[1].toInt() * modifier).toInt().toString(),
+                        (unique.params[0].toInt() * modifier).toInt().tr(),
+                        (unique.params[1].toInt() * modifier).toInt().tr(),
                         stat
                     )
                 }
@@ -204,7 +207,7 @@ object UnitActionsFromUniques {
             val title = UnitActionModifiers.actionTextWithSideEffects(baseTitle, unique, unit)
 
             val unitAction = fun (): (()->Unit)? {
-                if (unit.currentMovement == 0f) return null
+                if (!unit.hasMovement()) return null
                 val triggerFunction = UniqueTriggerActivation.getTriggerFunction(unique, unit.civ, unit = unit, tile = unit.currentTile)
                     ?: return null
                 return { // This is the *action* that will be triggered!
@@ -254,9 +257,9 @@ object UnitActionsFromUniques {
 
         return UnitAction(UnitActionType.CreateImprovement, 82f, "Create [$improvementName]",
             action = {
-                tile.changeImprovement(improvementName, unit.civ, unit)
+                tile.setImprovement(improvementName, unit.civ, unit)
                 unit.destroy()  // Modders may wish for a nondestructive way, but that should be another Unique
-            }.takeIf { unit.currentMovement > 0 })
+            }.takeIf { unit.hasMovement() })
     }
 
     // Not internal: Used in SpecificUnitAutomation
@@ -287,14 +290,14 @@ object UnitActionsFromUniques {
                     ),
                     action = {
                         val unitTile = unit.getTile()
-                        unitTile.changeImprovement(improvement.name, unit.civ, unit)
+                        unitTile.setImprovement(improvement.name, unit.civ, unit)
 
                         unit.civ.cache.updateViewableTiles() // to update 'last seen improvement'
 
                         UnitActionModifiers.activateSideEffects(unit, unique)
                     }.takeIf {
                         resourcesAvailable
-                            && unit.currentMovement > 0f
+                            && unit.hasMovement()
                             && tile.improvementFunctions.canBuildImprovement(improvement, unit.civ)
                             // Next test is to prevent interfering with UniqueType.CreatesOneImprovement -
                             // not pretty, but users *can* remove the building from the city queue an thus clear this:
@@ -370,14 +373,14 @@ object UnitActionsFromUniques {
                     val oldMovement = unit.currentMovement
                     unit.destroy()
                     val newUnit =
-                        civInfo.units.placeUnitNearTile(unitTile.position, unitToTransformTo)
+                        civInfo.units.placeUnitNearTile(unitTile.position, unitToTransformTo, unit.id)
 
                     /** We were UNABLE to place the new unit, which means that the unit failed to upgrade!
                      * The only known cause of this currently is "land units upgrading to water units" which fail to be placed.
                      */
                     if (newUnit == null) {
                         val resurrectedUnit =
-                            civInfo.units.placeUnitNearTile(unitTile.position, unit.baseUnit)!!
+                            civInfo.units.placeUnitNearTile(unitTile.position, unit.baseUnit, unit.id)!!
                         unit.copyStatisticsTo(resurrectedUnit)
                     } else { // Managed to upgrade
                         unit.copyStatisticsTo(newUnit)
@@ -401,7 +404,7 @@ object UnitActionsFromUniques {
     internal fun getBuildingImprovementsActions(unit: MapUnit, tile: Tile): Sequence<UnitAction> {
         if (!unit.cache.hasUniqueToBuildImprovements) return emptySequence()
 
-        val couldConstruct = unit.currentMovement > 0
+        val couldConstruct = unit.hasMovement()
             && !tile.isCityCenter()
             && unit.civ.gameInfo.ruleset.tileImprovements.values.any {
             ImprovementPickerScreen.canReport(
@@ -428,13 +431,12 @@ object UnitActionsFromUniques {
         val tile = unit.currentTile
         if (!tile.isPillaged()) return 0
         if (tile.improvementInProgress == Constants.repair) return tile.turnsToImprovement
-        var repairTurns = tile.ruleset.tileImprovements[Constants.repair]!!.getTurnsToBuild(unit.civ, unit)
+        val repairTurns = tile.ruleset.tileImprovements[Constants.repair]!!.getTurnsToBuild(unit.civ, unit)
 
         val pillagedImprovement = tile.getImprovementToRepair()!!
         val turnsToBuild = pillagedImprovement.getTurnsToBuild(unit.civ, unit)
         // cap repair to number of turns to build original improvement
-        if (turnsToBuild < repairTurns) repairTurns = turnsToBuild
-        return repairTurns
+        return repairTurns.coerceAtMost(turnsToBuild)
     }
 
     internal fun getRepairActions(unit: MapUnit, tile: Tile) = sequenceOf(getRepairAction(unit)).filterNotNull()
@@ -448,7 +450,7 @@ object UnitActionsFromUniques {
         if (tile.isCityCenter()) return null
         if (!tile.isPillaged()) return null
 
-        val couldConstruct = unit.currentMovement > 0
+        val couldConstruct = unit.hasMovement()
             && !tile.isCityCenter() && tile.improvementInProgress != Constants.repair
             && !tile.isEnemyTerritory(unit.civ)
 
@@ -457,8 +459,7 @@ object UnitActionsFromUniques {
         return UnitAction(UnitActionType.Repair, 90f,
             title = "${UnitActionType.Repair} [${unit.currentTile.getImprovementToRepair()!!.name}] - [${turnsToBuild}${Fonts.turn}]",
             action = {
-                tile.turnsToImprovement = getRepairTurns(unit)
-                tile.improvementInProgress = Constants.repair
+                tile.queueImprovement(Constants.repair, turnsToBuild)
             }.takeIf { couldConstruct }
         )
     }

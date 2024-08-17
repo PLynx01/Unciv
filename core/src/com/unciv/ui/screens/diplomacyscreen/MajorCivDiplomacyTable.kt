@@ -13,7 +13,7 @@ import com.unciv.logic.civilization.diplomacy.DiplomacyManager
 import com.unciv.logic.civilization.diplomacy.DiplomaticModifiers
 import com.unciv.logic.civilization.diplomacy.RelationshipLevel
 import com.unciv.logic.trade.TradeOffer
-import com.unciv.logic.trade.TradeType
+import com.unciv.logic.trade.TradeOfferType
 import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.models.translations.tr
 import com.unciv.ui.components.extensions.addSeparator
@@ -29,7 +29,7 @@ class MajorCivDiplomacyTable(private val diplomacyScreen: DiplomacyScreen) {
     val viewingCiv = diplomacyScreen.viewingCiv
 
     fun getMajorCivDiplomacyTable(otherCiv: Civilization): Table {
-        val otherCivDiplomacyManager = otherCiv.getDiplomacyManager(viewingCiv)
+        val otherCivDiplomacyManager = otherCiv.getDiplomacyManager(viewingCiv)!!
 
         val diplomacyTable = Table()
         diplomacyTable.defaults().pad(10f)
@@ -50,7 +50,7 @@ class MajorCivDiplomacyTable(private val diplomacyScreen: DiplomacyScreen) {
         val diplomaticRelationshipsCanChange =
             !viewingCiv.gameInfo.ruleset.modOptions.hasUnique(UniqueType.DiplomaticRelationshipsCannotChange)
 
-        val diplomacyManager = viewingCiv.getDiplomacyManager(otherCiv)
+        val diplomacyManager = viewingCiv.getDiplomacyManager(otherCiv)!!
 
         if (!viewingCiv.isAtWarWith(otherCiv)) {
             diplomacyTable.add(getTradeButton(otherCiv)).row()
@@ -106,7 +106,7 @@ class MajorCivDiplomacyTable(private val diplomacyScreen: DiplomacyScreen) {
         val negotiatePeaceButton = "Negotiate Peace".toTextButton()
         negotiatePeaceButton.onClick {
             val tradeTable = diplomacyScreen.setTrade(otherCiv)
-            val peaceTreaty = TradeOffer(Constants.peaceTreaty, TradeType.Treaty)
+            val peaceTreaty = TradeOffer(Constants.peaceTreaty, TradeOfferType.Treaty, speed = viewingCiv.gameInfo.speed)
             tradeTable.tradeLogic.currentTrade.theirOffers.add(peaceTreaty)
             tradeTable.tradeLogic.currentTrade.ourOffers.add(peaceTreaty)
             tradeTable.offerColumnsTable.update()
@@ -118,7 +118,7 @@ class MajorCivDiplomacyTable(private val diplomacyScreen: DiplomacyScreen) {
         if (otherCivDiplomacyManager.hasFlag(DiplomacyFlags.DeclaredWar)) {
             negotiatePeaceButton.disable() // Can't trade for 10 turns after war was declared
             val turnsLeft = otherCivDiplomacyManager.getFlag(DiplomacyFlags.DeclaredWar)
-            negotiatePeaceButton.setText(negotiatePeaceButton.text.toString() + "\n$turnsLeft" + Fonts.turn)
+            negotiatePeaceButton.setText(negotiatePeaceButton.text.toString() + "\n${turnsLeft.tr()}" + Fonts.turn)
         }
         return negotiatePeaceButton
     }
@@ -175,16 +175,25 @@ class MajorCivDiplomacyTable(private val diplomacyScreen: DiplomacyScreen) {
     ): Table? {
         val promisesTable = Table()
 
-        // Not for (flag in DiplomacyFlags.values()) - all other flags should result in DiplomaticModifiers or stay internal?
-        val flag = DiplomacyFlags.AgreedToNotSettleNearUs
-        if (otherCivDiplomacyManager.hasFlag(flag)) {
+        if (otherCivDiplomacyManager.hasFlag(DiplomacyFlags.AgreedToNotSettleNearUs)) {
             val text =
-                "We promised not to settle near them ([${otherCivDiplomacyManager.getFlag(flag)}] turns remaining)"
+                "We promised not to settle near them ([${otherCivDiplomacyManager.getFlag(DiplomacyFlags.AgreedToNotSettleNearUs)}] turns remaining)"
             promisesTable.add(text.toLabel(Color.LIGHT_GRAY)).row()
         }
-        if (diplomacyManager.hasFlag(flag)) {
+        if (diplomacyManager.hasFlag(DiplomacyFlags.AgreedToNotSettleNearUs)) {
             val text =
-                "They promised not to settle near us ([${diplomacyManager.getFlag(flag)}] turns remaining)"
+                "They promised not to settle near us ([${diplomacyManager.getFlag(DiplomacyFlags.AgreedToNotSettleNearUs)}] turns remaining)"
+            promisesTable.add(text.toLabel(Color.LIGHT_GRAY)).row()
+        }
+
+        if (otherCivDiplomacyManager.hasFlag(DiplomacyFlags.AgreedToNotSpreadReligion)) {
+            val text =
+                "We promised not to spread religion to them ([${otherCivDiplomacyManager.getFlag(DiplomacyFlags.AgreedToNotSpreadReligion)}] turns remaining)"
+            promisesTable.add(text.toLabel(Color.LIGHT_GRAY)).row()
+        }
+        if (diplomacyManager.hasFlag(DiplomacyFlags.AgreedToNotSpreadReligion)) {
+            val text =
+                "They promised not to spread religion to us ([${diplomacyManager.getFlag(DiplomacyFlags.AgreedToNotSpreadReligion)}] turns remaining)"
             promisesTable.add(text.toLabel(Color.LIGHT_GRAY)).row()
         }
 
@@ -227,6 +236,20 @@ class MajorCivDiplomacyTable(private val diplomacyScreen: DiplomacyScreen) {
             dontSettleCitiesButton.disable()
         }
         demandsTable.add(dontSettleCitiesButton).row()
+
+        val dontSpreadReligionButton = "Please don't spread your religion to us.".toTextButton()
+        if (otherCiv.popupAlerts.any { it.type == AlertType.DemandToStopSpreadingReligion && it.value == viewingCiv.civName })
+            dontSettleCitiesButton.disable()
+        dontSettleCitiesButton.onClick {
+            otherCiv.popupAlerts.add(
+                PopupAlert(
+                    AlertType.DemandToStopSpreadingReligion,
+                    viewingCiv.civName
+                )
+            )
+            dontSpreadReligionButton.disable()
+        }
+        demandsTable.add(dontSpreadReligionButton).row()
 
         demandsTable.add(Constants.close.toTextButton().onClick { diplomacyScreen.updateRightSide(otherCiv) })
         return demandsTable

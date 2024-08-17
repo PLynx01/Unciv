@@ -7,6 +7,8 @@ import com.unciv.Constants
 import com.unciv.UncivGame
 import com.unciv.logic.multiplayer.FriendList
 import com.unciv.models.UncivSound
+import com.unciv.models.translations.Translations.Companion.getLocaleFromLanguage
+import com.unciv.models.translations.Translations.Companion.getNumberFormatFromLanguage
 import com.unciv.ui.components.fonts.FontFamilyData
 import com.unciv.ui.components.fonts.Fonts
 import com.unciv.ui.components.input.KeyboardBindings
@@ -15,11 +17,13 @@ import com.unciv.ui.screens.worldscreen.NotificationsScroll
 import com.unciv.utils.Display
 import com.unciv.utils.ScreenOrientation
 import java.text.Collator
+import java.text.NumberFormat
 import java.time.Duration
 import java.util.Locale
 import kotlin.reflect.KClass
 import kotlin.reflect.KMutableProperty0
 
+/** Settings that apply across all games, stored in GameSettings.json */
 class GameSettings {
 
     /** Allows panning the map by moving the pointer to the screen edges */
@@ -36,6 +40,7 @@ class GameSettings {
     var checkForDueUnits: Boolean = true
     var autoUnitCycle: Boolean = true
     var singleTapMove: Boolean = false
+    var longTapMove: Boolean = true
     var language: String = Constants.english
     @Transient
     var locale: Locale? = null
@@ -96,10 +101,11 @@ class GameSettings {
 
     var autoPlay = GameSettingsAutoPlay()
 
-    var enableEspionageOption = false
-
     // This is a string not an enum so if tabs change it won't screw up the json serialization
+    //TODO remove line in a future update
     var lastOverviewPage = EmpireOverviewCategories.Cities.name
+    /** Holds EmpireOverviewScreen per-page persistable states */
+    val overview = OverviewPersistableData()
 
     /** Orientation for mobile platforms */
     var displayOrientation = ScreenOrientation.Landscape
@@ -130,6 +136,11 @@ class GameSettings {
     /** Size of automatic display of UnitSet art in Civilopedia - 0 to disable */
     var pediaUnitArtSize = 0f
 
+    /** Don't close developer console after a successful command */
+    var keepConsoleOpen = false
+    /** Persist the history of successful developer console commands */
+    val consoleCommandHistory = ArrayList<String>()
+
     /** used to migrate from older versions of the settings */
     var version: Int? = null
 
@@ -143,6 +154,7 @@ class GameSettings {
     //region <Methods>
 
     fun save() {
+        if (Gdx.app == null) return // Simulation mode from ConsoleLauncher
         refreshWindowSize()
         UncivGame.Current.files.setGeneralSettings(this)
     }
@@ -161,14 +173,7 @@ class GameSettings {
     }
 
     fun updateLocaleFromLanguage() {
-        val bannedCharacters = listOf(' ', '_', '-', '(', ')') // Things not to have in enum names
-        val languageName = language.filterNot { it in bannedCharacters }
-        locale = try {
-            val code = LocaleCode.valueOf(languageName)
-            Locale(code.language, code.country)
-        } catch (_: Exception) {
-            Locale.getDefault()
-        }
+        locale = getLocaleFromLanguage(language)
     }
 
     fun getFontSize(): Int {
@@ -183,6 +188,10 @@ class GameSettings {
 
     fun getCollatorFromLocale(): Collator {
         return Collator.getInstance(getCurrentLocale())
+    }
+
+    fun getCurrentNumberFormat(): NumberFormat {
+        return getNumberFormatFromLanguage(language)
     }
 
     //endregion
@@ -251,8 +260,19 @@ class GameSettings {
 
     enum class NationPickerListMode { Icons, List }
 
+    /** Map Unciv language key to Java locale, for the purpose of getting a Collator for sorting.
+     *  - Effect depends on the Java libraries and may not always conform to expectations.
+     *    If in doubt, debug and see what Locale instance you get and compare its properties with `Locale.getDefault()`.
+     *    (`Collator.getInstance(LocaleCode.*.run { Locale(language, country) }) to Collator.getInstance()`, drill to both `rules`, compare hashes - if equal and other properties equal, then Java doesn't know your Language))
+     *  @property name same as translation file name with ' ', '_', '-', '(', ')' removed
+     *  @property language ISO 639-1 code for the language
+     *  @property country ISO 3166 code for the nation this is predominantly spoken in
+     *  @property trueLanguage If set, used instead of language to trick Java into supplying a close-enough collator (a no-match would otherwise give us the default collator, not a collator for a partial match)
+     */
     enum class LocaleCode(val language: String, val country: String, val trueLanguage: String? = null) {
+        Afrikaans("af", "ZA"),
         Arabic("ar", "IQ"),
+        Bangla("bn", "BD"),
         Belarusian("be", "BY"),
         Bosnian("bs", "BA"),
         BrazilianPortuguese("pt", "BR"),
@@ -266,6 +286,7 @@ class GameSettings {
         Estonian("et", "EE"),
         Finnish("fi", "FI"),
         French("fr", "FR"),
+        Galician("gl", "ES"),
         German("de", "DE"),
         Greek("el", "GR"),
         Hindi("hi", "IN"),
@@ -297,7 +318,7 @@ class GameSettings {
         Turkish("tr", "TR"),
         Ukrainian("uk", "UA"),
         Vietnamese("vi", "VN"),
-        Afrikaans("af", "ZA")
+        Zulu("zu", "ZA")
     }
 
     //endregion

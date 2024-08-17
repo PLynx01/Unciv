@@ -1,7 +1,7 @@
 package com.unciv.app.desktop
 
-import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Pixmap
+import com.unciv.UncivGame
 import com.unciv.ui.components.fonts.FontFamilyData
 import com.unciv.ui.components.fonts.FontImplementation
 import com.unciv.ui.components.fonts.FontMetricsCommon
@@ -44,7 +44,7 @@ class DesktopFont : FontImplementation {
         try
         {
             // Try to create and register new font
-            val fontFile = Gdx.files.local(path).file()
+            val fontFile = UncivGame.Current.files.getLocalFile(path).file()
             val ge = GraphicsEnvironment.getLocalGraphicsEnvironment()
             font = Font.createFont(Font.TRUETYPE_FONT, fontFile).deriveFont(size.toFloat())
             ge.registerFont(font)
@@ -61,8 +61,12 @@ class DesktopFont : FontImplementation {
         return font.size
     }
 
-    override fun getCharPixmap(char: Char): Pixmap {
-        var width = metric.charWidth(char)
+    override fun getCharPixmap(char: Char) = getCharPixmapCommon(char.toString(), metric.charWidth(char))
+
+    override fun getCharPixmap(symbolString: String) = getCharPixmapCommon(symbolString, metric.stringWidth(symbolString))
+
+    private fun getCharPixmapCommon(symbolString: String, measuredWidth: Int): Pixmap {
+        var width = measuredWidth
         var height = metric.height
         if (width == 0) {
             // This happens e.g. for the Tab character
@@ -75,7 +79,7 @@ class DesktopFont : FontImplementation {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         g.font = font
         g.color = Color.WHITE
-        g.drawString(char.toString(), 0, metric.leading + metric.ascent)
+        g.drawString(symbolString, 0, metric.leading + metric.ascent)
 
         val pixmap = Pixmap(bi.width, bi.height, Pixmap.Format.RGBA8888)
         val data = bi.getRGB(0, 0, bi.width, bi.height, null, 0, bi.width)

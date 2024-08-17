@@ -10,8 +10,8 @@ import android.graphics.fonts.FontStyle
 import android.graphics.fonts.SystemFonts
 import android.os.Build
 import androidx.annotation.RequiresApi
-import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Pixmap
+import com.unciv.UncivGame
 import com.unciv.ui.components.fonts.FontFamilyData
 import com.unciv.ui.components.fonts.FontImplementation
 import com.unciv.ui.components.fonts.FontMetricsCommon
@@ -66,7 +66,7 @@ class AndroidFont : FontImplementation {
 
     private fun createTypefaceCustom(path: String): Typeface {
         return try {
-            Typeface.createFromFile(Gdx.files.local(path).file())
+            Typeface.createFromFile(UncivGame.Current.files.getLocalFile(path).file())
         } catch (e: Exception) {
             Log.error("Failed to create typeface, falling back to default", e)
             // Falling back to default
@@ -90,9 +90,9 @@ class AndroidFont : FontImplementation {
         return paint.textSize.toInt()
     }
 
-    override fun getCharPixmap(char: Char): Pixmap {
+    override fun getCharPixmap(symbolString: String): Pixmap {
         val metric = getMetrics()  // Use our interpretation instead of paint.fontMetrics because it fixes some bad metrics
-        var width = paint.measureText(char.toString()).toInt()
+        var width = paint.measureText(symbolString).toInt()
         var height = ceil(metric.height).toInt()
         if (width == 0) {
             height = getFontSize()
@@ -101,7 +101,7 @@ class AndroidFont : FontImplementation {
 
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        canvas.drawText(char.toString(), 0f, metric.leading + metric.ascent + 1f, paint)
+        canvas.drawText(symbolString, 0f, metric.leading + metric.ascent + 1f, paint)
 
         val pixmap = Pixmap(width, height, Pixmap.Format.RGBA8888)
         val data = IntArray(width * height)

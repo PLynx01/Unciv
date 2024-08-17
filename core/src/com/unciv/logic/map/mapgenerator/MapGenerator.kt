@@ -18,7 +18,7 @@ import com.unciv.models.ruleset.tile.TerrainType
 import com.unciv.models.ruleset.unique.Unique
 import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.ui.screens.mapeditorscreen.MapGeneratorSteps
-import com.unciv.ui.screens.mapeditorscreen.TileInfoNormalizer
+import com.unciv.logic.map.tile.TileNormalizer
 import com.unciv.utils.debug
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.isActive
@@ -175,7 +175,7 @@ class MapGenerator(val ruleset: Ruleset, private val coroutineScope: CoroutineSc
 
         // Map generation may generate incompatible terrain/feature combinations
         for (tile in map.values)
-            TileInfoNormalizer.normalizeToRuleset(tile, ruleset)
+            TileNormalizer.normalizeToRuleset(tile, ruleset)
 
         return map
     }
@@ -318,7 +318,7 @@ class MapGenerator(val ruleset: Ruleset, private val coroutineScope: CoroutineSc
                 suitableTiles,
                 map.mapParameters.mapSize.radius)
         for (tile in locations)
-            tile.changeImprovement(ruinsEquivalents.keys.random())
+            tile.improvement = ruinsEquivalents.keys.random()
     }
 
     private fun spreadResources(tileMap: TileMap) {
@@ -417,7 +417,7 @@ class MapGenerator(val ruleset: Ruleset, private val coroutineScope: CoroutineSc
             val humidityRandom = randomness.getPerlinNoise(tile, humiditySeed, scale = scale, nOctaves = 1)
             val humidity = ((humidityRandom + 1.0) / 2.0 + humidityShift).coerceIn(0.0..1.0)
 
-            val expectedTemperature = if (tileMap.mapParameters.shape === MapShape.flatEarth) {
+            val expectedTemperature = if (tileMap.mapParameters.shape == MapShape.flatEarth) {
                 // Flat Earth uses radius because North is center of map
                 val radius = getTileRadius(tile, tileMap)
                 val radiusTemperature = getTemperatureAtRadius(radius)
@@ -589,7 +589,7 @@ class MapGenerator(val ruleset: Ruleset, private val coroutineScope: CoroutineSc
                     0f, 1f))
             }.toList()
 
-        if (tileMap.mapParameters.shape === MapShape.flatEarth) {
+        if (tileMap.mapParameters.shape == MapShape.flatEarth) {
             spawnFlatEarthIceWalls(tileMap, iceEquivalents)
         }
 

@@ -12,7 +12,7 @@ import com.unciv.logic.UncivShowableException
 import com.unciv.logic.civilization.PlayerType
 import com.unciv.logic.files.MapSaver
 import com.unciv.logic.map.MapGeneratedMainType
-import com.unciv.logic.multiplayer.OnlineMultiplayer
+import com.unciv.logic.multiplayer.Multiplayer
 import com.unciv.logic.multiplayer.storage.FileStorageRateLimitReached
 import com.unciv.models.metadata.BaseRuleset
 import com.unciv.models.metadata.GameSetupInfo
@@ -48,8 +48,7 @@ import kotlin.math.floor
 import com.unciv.ui.components.widgets.AutoScrollPane as ScrollPane
 
 class NewGameScreen(
-    defaultGameSetupInfo: GameSetupInfo? = null,
-    isReset: Boolean = false
+    defaultGameSetupInfo: GameSetupInfo? = null
 ): IPreviousScreen, PickerScreen(), RecreateOnResize {
 
     override val gameSetupInfo = defaultGameSetupInfo ?: GameSetupInfo.fromSettings()
@@ -79,7 +78,7 @@ class NewGameScreen(
             updatePlayerPickerTable = { desiredCiv -> playerPickerTable.update(desiredCiv) },
             updatePlayerPickerRandomLabel = { playerPickerTable.updateRandomNumberLabel() }
         )
-        mapOptionsTable = MapOptionsTable(this, isReset)
+        mapOptionsTable = MapOptionsTable(this)
         closeButton.onActivation {
             mapOptionsTable.cancelBackgroundJobs()
             game.popScreen()
@@ -102,7 +101,7 @@ class NewGameScreen(
                     "Are you sure you want to reset all game options to defaults?",
                     "Reset to defaults",
                 ) {
-                    game.replaceCurrentScreen(NewGameScreen(GameSetupInfo(), isReset = true))
+                    game.replaceCurrentScreen(NewGameScreen(GameSetupInfo()))
                 }.open(true)
             }
         }
@@ -116,7 +115,7 @@ class NewGameScreen(
         if (gameSetupInfo.gameParameters.isOnlineMultiplayer) {
             if (!checkConnectionToMultiplayerServer()) {
                 val noInternetConnectionPopup = Popup(this)
-                val label = if (OnlineMultiplayer.usesCustomServer()) "Couldn't connect to Multiplayer Server!" else "Couldn't connect to Dropbox!"
+                val label = if (Multiplayer.usesCustomServer()) "Couldn't connect to Multiplayer Server!" else "Couldn't connect to Dropbox!"
                 noInternetConnectionPopup.addGoodSizedLabel(label.tr()).row()
                 noInternetConnectionPopup.addCloseButton()
                 noInternetConnectionPopup.open()
@@ -210,9 +209,9 @@ class NewGameScreen(
             if (message != null) {
                 ToastPopup( message, UncivGame.Current.screen!!, 4000 )
                 with (mapOptionsTable.generatedMapOptionsTable) {
-                    customMapSizeRadius.text = mapSize.radius.toString()
-                    customMapWidth.text = mapSize.width.toString()
-                    customMapHeight.text = mapSize.height.toString()
+                    customMapSizeRadius.text = mapSize.radius.tr()
+                    customMapWidth.text = mapSize.width.tr()
+                    customMapHeight.text = mapSize.height.tr()
                 }
                 Gdx.input.inputProcessor = stage
                 return
@@ -280,7 +279,7 @@ class NewGameScreen(
     private fun checkConnectionToMultiplayerServer(): Boolean {
         return try {
             val multiplayerServer = UncivGame.Current.settings.multiplayer.server
-            val u =  URL(if (OnlineMultiplayer.usesDropbox()) "https://content.dropboxapi.com" else multiplayerServer)
+            val u =  URL(if (Multiplayer.usesDropbox()) "https://content.dropboxapi.com" else multiplayerServer)
             val con = u.openConnection()
             con.connectTimeout = 3000
             con.connect()

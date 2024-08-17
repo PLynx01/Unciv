@@ -3,15 +3,12 @@ package com.unciv.models.ruleset.validation
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
 import com.unciv.Constants
+import com.unciv.UncivGame
 import com.unciv.json.fromJsonFile
 import com.unciv.json.json
 import com.unciv.logic.map.tile.RoadStatus
 import com.unciv.models.metadata.BaseRuleset
-import com.unciv.models.ruleset.BeliefType
-import com.unciv.models.ruleset.Building
-import com.unciv.models.ruleset.IRulesetObject
-import com.unciv.models.ruleset.Ruleset
-import com.unciv.models.ruleset.RulesetCache
+import com.unciv.models.ruleset.*
 import com.unciv.models.ruleset.nation.Nation
 import com.unciv.models.ruleset.nation.getContrastRatio
 import com.unciv.models.ruleset.nation.getRelativeLuminance
@@ -25,6 +22,7 @@ import com.unciv.models.stats.Stats
 import com.unciv.models.tilesets.TileSetCache
 import com.unciv.models.tilesets.TileSetConfig
 import com.unciv.ui.images.AtlasPreview
+import com.unciv.ui.images.Portrait
 
 class RulesetValidator(val ruleset: Ruleset) {
 
@@ -58,8 +56,8 @@ class RulesetValidator(val ruleset: Ruleset) {
 
         // Tileset tests - e.g. json configs complete and parseable
         checkTilesetSanity(lines)  // relies on textureNamesCache
-
         checkCivilopediaText(lines)  // relies on textureNamesCache
+        checkFileNames(lines)
 
         return lines
     }
@@ -104,9 +102,71 @@ class RulesetValidator(val ruleset: Ruleset) {
         }
 
         checkCivilopediaText(lines)
+        checkFileNames(lines)
 
         return lines
     }
+
+
+    private fun checkFileNames(lines: RulesetErrorList) {
+        val folder = ruleset.folderLocation ?: return
+        for (child in folder.list()){
+            if (child.name().endsWith("json") && !child.name().startsWith("Atlas"))
+                lines.add("File ${child.name()} is located in the root folder - it should be moved to a 'jsons' folder")
+        }
+
+        fun getPossibleMisspellings(originalText: String, possibleMisspellings: List<String>): List<String> {
+            return possibleMisspellings.filter {
+                getRelativeTextDistance(
+                    it,
+                    originalText
+                ) <= RulesetCache.uniqueMisspellingThreshold
+            }
+        }
+
+        val knownFolderNames = listOf("jsons", "maps", "sounds", "Images", "fonts")
+        for (child in folder.list()){
+            if (child.isDirectory && child.name() !in knownFolderNames){
+                val possibleMisspellings = getPossibleMisspellings(child.name(), knownFolderNames)
+                if (possibleMisspellings.isNotEmpty())
+                    lines.add("Folder \"${child.name()}\" is probably a misspelling of "+possibleMisspellings.joinToString("/"),
+                        RulesetErrorSeverity.OK)
+            }
+        }
+
+        val knownImageFolders = Portrait.Type.entries.map { it.directory }.flatMap { listOf(it+"Icons", it+"Portraits") } +
+                // Not portrait-able (yet?)
+                listOf("CityStateIcons", "PolicyBranchIcons", "PolicyIcons", "OtherIcons", "EmojiIcons", "StatIcons", "TileIcons", "TileSets")
+        val imageFolders = folder.list().filter { it.name().startsWith("Images") }
+        for (imageFolder in imageFolders){
+            for (child in imageFolder.list()){
+                if (!child.isDirectory) {
+                    lines.add("File \"$imageFolder/${child.name()}\" is misplaced - Images folders should not contain any files directly - only subfolders",
+                        RulesetErrorSeverity.OK)
+                } else if (child.name() !in knownImageFolders){
+                    val possibleMisspellings = getPossibleMisspellings(child.name(), knownImageFolders)
+                    if (possibleMisspellings.isNotEmpty())
+                        lines.add("Folder \"$imageFolder/${child.name()}\" is probably a misspelling of "+
+                                possibleMisspellings.joinToString("/"),
+                            RulesetErrorSeverity.OK)
+                }
+            }
+        }
+
+
+        val jsonFolder = folder.child("jsons")
+        if (jsonFolder.exists()) {
+            for (file in jsonFolder.list("json")) {
+                if (file.name() !in RulesetFile.entries.map { it.filename }) {
+                    var text = "File ${file.name()} is in the jsons folder but is not a recognized ruleset file"
+                    val possibleMisspellings = getPossibleMisspellings(file.name(), RulesetFile.entries.map { it.filename })
+                    if (possibleMisspellings.isNotEmpty()) text += "\nPossible misspelling of: "+possibleMisspellings.joinToString("/")
+                    lines.add(text, RulesetErrorSeverity.OK)
+                }
+            }
+        }
+    }
+
 
     private fun addModOptionsErrors(lines: RulesetErrorList, tryFixUnknownUniques: Boolean) {
         // Basic Unique validation (type, target, parameters) should always run.
@@ -123,6 +183,23 @@ class RulesetValidator(val ruleset: Ruleset) {
         // modOptions is a valid sourceObject, but unnecessary
         if (ruleset.modOptions.uniqueObjects.count { it.type in audioVisualUniqueTypes } > 1)
             lines.add("A mod should only specify one of the 'can/should/cannot be used as permanent audiovisual mod' options.", sourceObject = null)
+
+        val mapSelectUniques = ruleset.modOptions.getMatchingUniques(UniqueType.ModMapPreselection).toList()
+        if (mapSelectUniques.size > 1)
+            lines.add("Specifying more than one map as preselection makes no sense", RulesetErrorSeverity.WarningOptionsOnly, sourceObject = null)
+        if (mapSelectUniques.isNotEmpty()) {
+            val mapsFolder = UncivGame.Current.files.getModFolder(ruleset.name).child("maps")
+            if (mapsFolder.exists()) {
+                val maps = mapsFolder.list().map { it.name().lowercase() }
+                for (unique in mapSelectUniques) {
+                    if (unique.params[0].lowercase() in maps) continue
+                    lines.add("Mod names map '${unique.params[0]}' as preselection, which does not exist.", RulesetErrorSeverity.WarningOptionsOnly, sourceObject = null)
+                }
+            } else {
+                lines.add("Mod option for map preselection exists but Mod has no 'maps' folder.", RulesetErrorSeverity.WarningOptionsOnly, sourceObject = null)
+            }
+        }
+
         if (!ruleset.modOptions.isBaseRuleset) return
         for (unique in ruleset.modOptions.getMatchingUniques(UniqueType.ModRequires)) {
             lines.add("Mod option '${unique.text}' is invalid for a base ruleset.", sourceObject = null)
@@ -175,12 +252,19 @@ class RulesetValidator(val ruleset: Ruleset) {
                         "Victory type ${victoryType.name} requires adding the non-existant unit $requiredUnit to the capital to win!",
                         RulesetErrorSeverity.Warning, sourceObject = null
                     )
-            for (milestone in victoryType.milestoneObjects)
+            for (milestone in victoryType.milestoneObjects) {
                 if (milestone.type == null)
                     lines.add(
-                        "Victory type ${victoryType.name} has milestone ${milestone.uniqueDescription} that is of an unknown type!",
+                        "Victory type ${victoryType.name} has milestone \"${milestone.uniqueDescription}\" that is of an unknown type!",
                         RulesetErrorSeverity.Error, sourceObject = null
                     )
+                if (milestone.type in listOf(MilestoneType.BuiltBuilding, MilestoneType.BuildingBuiltGlobally)
+                    && milestone.params[0] !in ruleset.buildings)
+                    lines.add(
+                        "Victory type ${victoryType.name} has milestone \"${milestone.uniqueDescription}\" that references an unknown building ${milestone.params[0]}!",
+                        RulesetErrorSeverity.Error,
+                    )
+            }
             for (victory in ruleset.victories.values)
                 if (victory.name != victoryType.name && victory.milestones == victoryType.milestones)
                     lines.add(
@@ -247,12 +331,24 @@ class RulesetValidator(val ruleset: Ruleset) {
                 for (prereq in policy.requires!!)
                     if (!ruleset.policies.containsKey(prereq))
                         lines.add("${policy.name} requires policy $prereq which does not exist!", sourceObject = policy)
+
             uniqueValidator.checkUniques(policy, lines, true, tryFixUnknownUniques)
         }
 
-        for (branch in ruleset.policyBranches.values)
+        for (branch in ruleset.policyBranches.values) {
             if (branch.era !in ruleset.eras)
                 lines.add("${branch.name} requires era ${branch.era} which does not exist!", sourceObject = branch)
+
+            val policyLocations = HashMap<String, Policy>()
+            for (policy in branch.policies) {
+                val policyLocation = "${policy.row}/${policy.column}"
+                val existingPolicyInLocation = policyLocations[policyLocation]
+
+                if (existingPolicyInLocation == null) policyLocations[policyLocation] = policy
+                else lines.add("Policies ${policy.name} and ${existingPolicyInLocation.name} in branch ${branch.name}" +
+                        " are both located at column ${policy.column} row ${policy.row}!", sourceObject = policy)
+            }
+        }
 
 
         for (policy in ruleset.policyBranches.values.flatMap { it.policies + it })
@@ -270,6 +366,8 @@ class RulesetValidator(val ruleset: Ruleset) {
 
             uniqueValidator.checkUniques(nation, lines, true, tryFixUnknownUniques)
 
+            if (nation.preferredVictoryType != Constants.neutralVictoryType && nation.preferredVictoryType !in ruleset.victories)
+                lines.add("${nation.name}'s preferredVictoryType is ${nation.preferredVictoryType} which does not exist!", sourceObject = nation)
             if (nation.cityStateType != null && nation.cityStateType !in ruleset.cityStateTypes)
                 lines.add("${nation.name} is of city-state type ${nation.cityStateType} which does not exist!", sourceObject = nation)
             if (nation.favoredReligion != null && nation.favoredReligion !in ruleset.religions)
@@ -382,7 +480,7 @@ class RulesetValidator(val ruleset: Ruleset) {
         lines: RulesetErrorList,
         tryFixUnknownUniques: Boolean
     ) {
-        if (ruleset.terrains.values.none { it.type == TerrainType.Land && !it.impassable })
+        if (ruleset.terrains.values.none { it.type == TerrainType.Land && !it.impassable && !it.hasUnique(UniqueType.NoNaturalGeneration) })
             lines.add("No passable land terrains exist!", sourceObject = null)
 
         for (terrain in ruleset.terrains.values) {
@@ -393,9 +491,7 @@ class RulesetValidator(val ruleset: Ruleset) {
                 else if (baseTerrain.type == TerrainType.NaturalWonder)
                     lines.add("${terrain.name} occurs on natural wonder $baseTerrainName: Unsupported.", RulesetErrorSeverity.WarningOptionsOnly, terrain)
             }
-            if (terrain.type == TerrainType.NaturalWonder) {
-                if (terrain.turnsInto == null)
-                    lines.add("Natural Wonder ${terrain.name} is missing the turnsInto attribute!", sourceObject = terrain)
+            if (terrain.type == TerrainType.NaturalWonder && terrain.turnsInto != null) {
                 val baseTerrain = ruleset.terrains[terrain.turnsInto]
                 if (baseTerrain == null)
                     lines.add("${terrain.name} turns into terrain ${terrain.turnsInto} which does not exist!", sourceObject = terrain)
@@ -423,7 +519,7 @@ class RulesetValidator(val ruleset: Ruleset) {
                 && !improvement.hasUnique(UniqueType.CanOnlyImproveResource)
                 && !improvement.hasUnique(UniqueType.Unbuildable)
                 && !improvement.name.startsWith(Constants.remove)
-                && improvement.name !in RoadStatus.values().map { it.removeAction }
+                && improvement.name !in RoadStatus.entries.map { it.removeAction }
                 && improvement.name != Constants.cancelImprovementOrder
             ) {
                 lines.add(
@@ -529,7 +625,7 @@ class RulesetValidator(val ruleset: Ruleset) {
         for (unit in ruleset.units.values) {
             checkUnitRulesetInvariant(unit, lines)
             checkUnitRulesetSpecific(unit, lines)
-            uniqueValidator.checkUniques(unit, lines, false, tryFixUnknownUniques)
+            uniqueValidator.checkUniques(unit, lines, true, tryFixUnknownUniques)
         }
     }
 
@@ -576,9 +672,6 @@ class RulesetValidator(val ruleset: Ruleset) {
         if (nation.cities.isEmpty() && !nation.isSpectator && !nation.isBarbarian) {
             lines.add("${nation.name} can settle cities, but has no city names!", sourceObject = nation)
         }
-
-        if (nation.preferredVictoryType != Constants.neutralVictoryType && nation.preferredVictoryType !in ruleset.victories)
-            lines.add("${nation.name}'s preferredVictoryType is ${nation.preferredVictoryType} which does not exist!", sourceObject = nation)
 
         // https://www.w3.org/TR/WCAG20/#visual-audio-contrast-contrast
         val constrastRatio = nation.getContrastRatio()
@@ -657,8 +750,8 @@ class RulesetValidator(val ruleset: Ruleset) {
             if (techColumn.columnNumber < 0)
                 lines.add("Tech Column number ${techColumn.columnNumber} is negative", sourceObject = null)
 
-            val buildingsWithoutAssignedCost = ruleset.buildings.values.filter {
-                it.cost == -1 && techColumn.techs.map { it.name }.contains(it.requiredTech) }.toList()
+            val buildingsWithoutAssignedCost = ruleset.buildings.values.filter { building ->
+                building.cost == -1 && techColumn.techs.map { it.name }.contains(building.requiredTech) }.toList()
 
 
             val nonWondersWithoutAssignedCost = buildingsWithoutAssignedCost.filter { !it.isAnyWonder() }
@@ -715,7 +808,7 @@ class RulesetValidator(val ruleset: Ruleset) {
             if (upgradesTo == unit.name || (upgradesTo == unit.replaces))
                 lines.add("${unit.name} upgrades to itself!", sourceObject = unit)
         }
-        if (unit.isMilitary() && unit.strength == 0)  // Should only match ranged units with 0 strength
+        if (unit.isMilitary && unit.strength == 0)  // Should only match ranged units with 0 strength
             lines.add("${unit.name} is a military unit but has no assigned strength!", sourceObject = unit)
     }
 
@@ -786,7 +879,7 @@ class RulesetValidator(val ruleset: Ruleset) {
 
     private fun checkTilesetSanity(lines: RulesetErrorList) {
         // If running from a jar *and* checking a builtin ruleset, skip this check.
-        // - We can't list() the jsons, and the unit test before relase is sufficient, the tileset config can't have changed since then.
+        // - We can't list() the jsons, and the unit test before release is sufficient, the tileset config can't have changed since then.
         if (ruleset.folderLocation == null && this::class.java.`package`?.specificationVersion != null)
             return
 

@@ -8,6 +8,7 @@ import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.logic.map.tile.Tile
 import com.unciv.models.UnitActionType
 import com.unciv.models.ruleset.Building
+import com.unciv.models.ruleset.tile.TerrainType
 import com.unciv.models.ruleset.unique.LocalUniqueCache
 import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.models.stats.Stat
@@ -27,9 +28,13 @@ object SpecificUnitAutomation {
     }
 
     fun automateCitadelPlacer(unit: MapUnit): Boolean {
+        // Keep at least 2 generals alive
+        if (unit.hasUnique(UniqueType.StrengthBonusInRadius) 
+                && unit.civ.units.getCivUnits().count { it.hasUnique(UniqueType.StrengthBonusInRadius) } < 3) 
+            return false
         // try to revenge and capture their tiles
         val enemyCities = unit.civ.getKnownCivs()
-                .filter { unit.civ.getDiplomacyManager(it).hasModifier(DiplomaticModifiers.StealingTerritory) }
+                .filter { unit.civ.getDiplomacyManager(it)!!.hasModifier(DiplomaticModifiers.StealingTerritory) }
                 .flatMap { it.cities }
         // find the suitable tiles (or their neighbours)
         val tileToSteal = enemyCities.flatMap { it.getTiles() } // City tiles
@@ -52,7 +57,7 @@ object SpecificUnitAutomation {
         // if there is a good tile to steal - go there
         if (tileToSteal != null) {
             unit.movement.headTowards(tileToSteal)
-            if (unit.currentMovement > 0 && unit.currentTile == tileToSteal)
+            if (unit.hasMovement() && unit.currentTile == tileToSteal)
                 UnitActionsFromUniques.getImprovementConstructionActionsFromGeneralUnique(unit, unit.currentTile).firstOrNull()?.action?.invoke()
             return true
         }
@@ -92,7 +97,7 @@ object SpecificUnitAutomation {
             return
         }
         unit.movement.headTowards(tileForCitadel)
-        if (unit.currentMovement > 0 && unit.currentTile == tileForCitadel)
+        if (unit.hasMovement() && unit.currentTile == tileForCitadel)
             UnitActionsFromUniques.getImprovementConstructionActionsFromGeneralUnique(unit, unit.currentTile)
                 .firstOrNull()?.action?.invoke()
     }
@@ -113,7 +118,7 @@ object SpecificUnitAutomation {
         if (unit.civ.gameInfo.turns == 0 && unit.civ.cities.isEmpty() && bestTilesInfo.tileRankMap.containsKey(unit.getTile())) {   // Special case, we want AI to settle in place on turn 1.
             val foundCityAction = UnitActionsFromUniques.getFoundCityAction(unit, unit.getTile())
             // Depending on era and difficulty we might start with more than one settler. In that case settle the one with the best location
-            val allUnsettledSettlers = unit.civ.units.getCivUnits().filter { it.currentMovement > 0 && it.baseUnit == unit.baseUnit }
+            val allUnsettledSettlers = unit.civ.units.getCivUnits().filter { it.hasMovement() && it.baseUnit == unit.baseUnit }
 
             // Don't settle immediately if we only have one settler, look for a better location
             val bestSettlerInRange = allUnsettledSettlers.maxByOrNull {
@@ -181,22 +186,23 @@ object SpecificUnitAutomation {
 
         val foundCityAction = UnitActionsFromUniques.getFoundCityAction(unit, bestCityLocation)
         if (foundCityAction?.action == null) { // this means either currentMove == 0 or city within 3 tiles
-            if (unit.currentMovement > 0) // therefore, city within 3 tiles
+            if (unit.hasMovement() && !unit.civ.isOneCityChallenger()) // therefore, city within 3 tiles
                 throw Exception("City within distance")
             return
         }
 
         unit.movement.headTowards(bestCityLocation)
-        if (unit.getTile() == bestCityLocation && unit.currentMovement > 0)
+        if (unit.getTile() == bestCityLocation && unit.hasMovement())
             foundCityAction.action.invoke()
     }
 
     /** @return whether there was any progress in placing the improvement. A return value of `false`
      * can be interpreted as: the unit doesn't know where to place the improvement or is stuck. */
     fun automateImprovementPlacer(unit: MapUnit) : Boolean {
-        val improvementBuildingUniques = unit.getMatchingUniques(UniqueType.ConstructImprovementInstantly)
+        val improvementBuildingUnique = unit.getMatchingUniques(UniqueType.ConstructImprovementInstantly).firstOrNull()
+            ?: return false
 
-        val improvementName = improvementBuildingUniques.first().params[0]
+        val improvementName = improvementBuildingUnique.params[0]
         val improvement = unit.civ.gameInfo.ruleset.tileImprovements[improvementName]
             ?: return false
         val relatedStat = improvement.maxByOrNull { it.value }?.key ?: Stat.Culture
@@ -205,13 +211,21 @@ object SpecificUnitAutomation {
             it.cityStats.statPercentBonusTree.totalStats[relatedStat]
         }
 
+        val averageTerrainStatsValue = unit.civ.gameInfo.ruleset.terrains.values.asSequence()
+            .filter { it.type == TerrainType.Land }
+            .map { Automation.rankStatsValue(it, unit.civ) }
+            .average()
 
+        val localUniqueCache = LocalUniqueCache()
         for (city in citiesByStatBoost) {
             val applicableTiles = city.getWorkableTiles().filter {
                 it.isLand && it.resource == null && !it.isCityCenter()
                         && (unit.currentTile == it || unit.movement.canMoveTo(it))
-                        && !it.containsGreatImprovement() && it.improvementFunctions.canBuildImprovement(improvement, unit.civ)
+                        && it.improvement == null
+                        && it.improvementFunctions.canBuildImprovement(improvement, unit.civ)
+                        && Automation.rankTile(it, unit.civ, localUniqueCache) > averageTerrainStatsValue
             }
+
             if (applicableTiles.none()) continue
 
             val pathToCity = unit.movement.getShortestPath(city.getCenterTile())
@@ -233,7 +247,6 @@ object SpecificUnitAutomation {
             }
 
             // if we got here, we're pretty close, start looking!
-            val localUniqueCache = LocalUniqueCache()
             val chosenTile = applicableTiles.sortedByDescending {
                 Automation.rankTile(
                     it,
@@ -267,7 +280,7 @@ object SpecificUnitAutomation {
                     .filter {
                         it != unit.civ
                             && !unit.civ.isAtWarWith(it)
-                            && it.isCityState()
+                            && it.isCityState
                             && it.cities.isNotEmpty()
                     }
                     .flatMap { it.cities[0].getTiles() }

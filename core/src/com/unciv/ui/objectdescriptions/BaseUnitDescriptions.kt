@@ -25,9 +25,9 @@ object BaseUnitDescriptions {
     /** Generate short description as comma-separated string for Technology description "Units enabled" and GreatPersonPickerScreen */
     fun getShortDescription(baseUnit: BaseUnit, uniqueExclusionFilter: Unique.() -> Boolean = {false}): String {
         val infoList = mutableListOf<String>()
-        if (baseUnit.strength != 0) infoList += "${baseUnit.strength}${Fonts.strength}"
-        if (baseUnit.rangedStrength != 0) infoList += "${baseUnit.rangedStrength}${Fonts.rangedStrength}"
-        if (baseUnit.movement != 2) infoList += "${baseUnit.movement}${Fonts.movement}"
+        if (baseUnit.strength != 0) infoList += "${baseUnit.strength.tr()}${Fonts.strength}"
+        if (baseUnit.rangedStrength != 0) infoList += "${baseUnit.rangedStrength.tr()}${Fonts.rangedStrength}"
+        if (baseUnit.movement != 2) infoList += "${baseUnit.movement.tr()}${Fonts.movement}"
         for (promotion in baseUnit.promotions)
             infoList += promotion.tr()
         if (baseUnit.replacementTextForUniques != "") infoList += baseUnit.replacementTextForUniques
@@ -56,7 +56,8 @@ object BaseUnitDescriptions {
         lines += "$strengthLine${baseUnit.movement}${Fonts.movement}"
 
         if (baseUnit.replacementTextForUniques != "") lines += baseUnit.replacementTextForUniques
-        else baseUnit.uniquesToDescription(lines) { type == UniqueType.Unbuildable }
+        else baseUnit.uniquesToDescription(lines) { type == UniqueType.Unbuildable
+                || type == UniqueType.ConsumesResources } // Already displayed in the resource requirements
 
         if (baseUnit.promotions.isNotEmpty()) {
             val prefix = "Free promotion${if (baseUnit.promotions.size == 1) "" else "s"}:".tr() + " "
@@ -96,6 +97,10 @@ object BaseUnitDescriptions {
             textList += FormattedLine(stats.joinToString("/", "{Cost}: "))
         }
 
+        if (baseUnit.interceptRange > 0) {
+            textList += FormattedLine("Air Intercept Range: [${baseUnit.interceptRange}]")
+        }
+
         if (baseUnit.replacementTextForUniques.isNotEmpty()) {
             textList += FormattedLine()
             textList += FormattedLine(baseUnit.replacementTextForUniques)
@@ -131,7 +136,7 @@ object BaseUnitDescriptions {
         val canUpgradeFrom = ruleset.units
             .filterValues {
                 (it.upgradesTo == baseUnit.name || it.upgradesTo != null && it.upgradesTo == baseUnit.replaces)
-                        && (it.uniqueTo == baseUnit.uniqueTo || it.uniqueTo == null)
+                        && (it.uniqueTo == null || it.uniqueTo == baseUnit.uniqueTo)
             }.keys
         if (canUpgradeFrom.isNotEmpty()) {
             if (canUpgradeFrom.size == 1)
@@ -201,7 +206,7 @@ object BaseUnitDescriptions {
         val imageName = "TileSets/${settings.unitSet}/Units/${baseUnit.name}"
         if (!ImageGetter.imageExists(imageName)) return  // Some units don't have Unit art (e.g. nukes)
         add(FormattedLine(extraImage = imageName, imageSize = settings.pediaUnitArtSize, centered = true))
-        add(FormattedLine(separator = true, color = "#7f7f7f"))
+        add(FormattedLine(separator = true, color = "GRAY"))
     }
 
     @Suppress("RemoveExplicitTypeArguments")  // for faster IDE - inferring sequence types can be slow
@@ -291,13 +296,12 @@ object BaseUnitDescriptions {
         val lostAbilityPredicate: (Unique)->Boolean = { it.text in betterUnit.uniques || it.isHiddenToUsers() }
         for (unique in originalUnit.uniqueObjects.filterNot(lostAbilityPredicate)) {
             // Need double translation of the "ability" here - unique texts may contain nuts - pardon, square brackets
-            yield("Lost ability (vs [${originalUnit.name}]): [${unique.text.tr()}]" to null)
+            yield("Lost ability (vs [${originalUnit.name}]): [${unique.getDisplayText().tr()}]" to null)
         }
-        for (promotion in betterUnit.promotions.filter { it !in originalUnit.promotions }) {
-            // Needs tr for **individual** translations (no bracket nesting), default separator would have extra blank
-            val effects = ruleset.unitPromotions[promotion]!!.uniques
-                .joinToString() { it.tr() }
-            yield("{$promotion} ($effects)" to "Promotion/$promotion")
+        for (promotionName in betterUnit.promotions.filter { it !in originalUnit.promotions }) {
+            val promotion = ruleset.unitPromotions[promotionName]!!
+            val effects = promotion.uniquesToDescription().joinToString()
+            yield("{$promotionName} ($effects)" to promotion.makeLink())
         }
     }
 

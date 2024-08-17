@@ -6,9 +6,10 @@ import com.unciv.logic.civilization.NotificationCategory
 import com.unciv.logic.civilization.NotificationIcon
 import com.unciv.logic.trade.Trade
 import com.unciv.logic.trade.TradeOffer
-import com.unciv.logic.trade.TradeType
+import com.unciv.logic.trade.TradeOfferType
 import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.ui.components.extensions.toPercent
+import kotlin.math.absoluteValue
 import kotlin.math.max
 import kotlin.math.min
 
@@ -20,7 +21,7 @@ object DiplomacyTurnManager {
         updateHasOpenBorders()
         nextTurnDiplomaticModifiers()
         nextTurnFlags()
-        if (civInfo.isCityState() && otherCiv().isMajorCiv())
+        if (civInfo.isCityState && otherCiv().isMajorCiv())
             nextTurnCityStateInfluence()
     }
 
@@ -33,12 +34,12 @@ object DiplomacyTurnManager {
                 .filter { it.amount < 0 && !it.resource.isStockpiled() }.map { it.resource.name }
 
             for (offer in trade.ourOffers) {
-                if (offer.type in listOf(TradeType.Luxury_Resource, TradeType.Strategic_Resource)
+                if (offer.type in listOf(TradeOfferType.Luxury_Resource, TradeOfferType.Strategic_Resource)
                     && (offer.name in negativeCivResources || !civInfo.gameInfo.ruleset.tileResources.containsKey(offer.name))
                 ) {
 
                     trades.remove(trade)
-                    val otherCivTrades = otherCiv().getDiplomacyManager(civInfo).trades
+                    val otherCivTrades = otherCiv().getDiplomacyManager(civInfo)!!.trades
                     otherCivTrades.removeAll { it.equalTrade(trade.reverse()) }
 
                     // Can't cut short peace treaties!
@@ -52,6 +53,8 @@ object DiplomacyTurnManager {
                     otherCiv().addNotification("One of our trades with [${civInfo.civName}] has been cut short",
                         DiplomacyAction(civInfo.civName, true),
                         NotificationCategory.Trade, NotificationIcon.Trade, civInfo.civName)
+                    // If you cut a trade short, we're not going to trust you with per-turn trades for a while
+                    otherCivDiplomacy().setFlag(DiplomacyFlags.ResourceTradesCutShort, civInfo.gameInfo.speed.dealDuration * 2)
                     civInfo.cache.updateCivResources()
                 }
             }
@@ -61,13 +64,13 @@ object DiplomacyTurnManager {
     private fun DiplomacyManager.remakePeaceTreaty(durationLeft: Int) {
         val treaty = Trade()
         treaty.ourOffers.add(
-            TradeOffer(Constants.peaceTreaty, TradeType.Treaty, duration = durationLeft)
+            TradeOffer(Constants.peaceTreaty, TradeOfferType.Treaty, duration = durationLeft)
         )
         treaty.theirOffers.add(
-            TradeOffer(Constants.peaceTreaty, TradeType.Treaty, duration = durationLeft)
+            TradeOffer(Constants.peaceTreaty, TradeOfferType.Treaty, duration = durationLeft)
         )
         trades.add(treaty)
-        otherCiv().getDiplomacyManager(civInfo).trades.add(treaty)
+        otherCiv().getDiplomacyManager(civInfo)!!.trades.add(treaty)
     }
 
 
@@ -133,12 +136,11 @@ object DiplomacyTurnManager {
 
     private fun DiplomacyManager.nextTurnFlags() {
         loop@ for (flag in flagsCountdown.keys.toList()) {
-            // No need to decrement negative countdown flags: they do not expire
-            if (flagsCountdown[flag]!! > 0)
-                flagsCountdown[flag] = flagsCountdown[flag]!! - 1
+            // We want negative flags to keep on going negative to keep track of time
+            flagsCountdown[flag] = flagsCountdown[flag]!! - 1
 
             // If we have uniques that make city states grant military units faster when at war with a common enemy, add higher numbers to this flag
-            if (flag == DiplomacyFlags.ProvideMilitaryUnit.name && civInfo.isMajorCiv() && otherCiv().isCityState() &&
+            if (flag == DiplomacyFlags.ProvideMilitaryUnit.name && civInfo.isMajorCiv() && otherCiv().isCityState &&
                 civInfo.gameInfo.civilizations.any { civInfo.isAtWarWith(it) && otherCiv().isAtWarWith(it) }) {
                 for (unique in civInfo.getMatchingUniques(UniqueType.CityStateMoreGiftedUnits)) {
                     flagsCountdown[DiplomacyFlags.ProvideMilitaryUnit.name] =
@@ -187,6 +189,9 @@ object DiplomacyTurnManager {
                     DiplomacyFlags.AgreedToNotSettleNearUs.name -> {
                         addModifier(DiplomaticModifiers.FulfilledPromiseToNotSettleCitiesNearUs, 10f)
                     }
+                    DiplomacyFlags.AgreedToNotSettleNearUs.name -> {
+                        addModifier(DiplomaticModifiers.FulfilledPromiseToNotSpreadReligion, 10f)
+                    }
                     DiplomacyFlags.RecentlyAttacked.name -> {
                         civInfo.cityStateFunctions.askForUnitGifts(otherCiv())
                     }
@@ -205,6 +210,10 @@ object DiplomacyTurnManager {
                     }
                 }
 
+                flagsCountdown.remove(flag)
+            } else if (flag == DiplomacyFlags.WaryOf.name && flagsCountdown[flag]!! < -10) {
+                // Used in DeclareWarTargetAutomation.declarePlannedWar to count the number of turns preparing
+                // If we have been preparing for over 10 turns then cancel our attack plan
                 flagsCountdown.remove(flag)
             }
         }
@@ -236,7 +245,7 @@ object DiplomacyTurnManager {
 
                     civInfo.updateStatsForNextTurn() // if they were bringing us gold per turn
                     if (trade.theirOffers.union(trade.ourOffers) // if resources were involved
-                            .any { it.type == TradeType.Luxury_Resource || it.type == TradeType.Strategic_Resource })
+                            .any { it.type == TradeOfferType.Luxury_Resource || it.type == TradeOfferType.Strategic_Resource })
                         civInfo.cache.updateCivResources()
                 }
             }
@@ -276,6 +285,7 @@ object DiplomacyTurnManager {
         revertToZero(DiplomaticModifiers.BetrayedDefensivePact, 1 / 16f) // That's an outrageous thing to do
         revertToZero(DiplomaticModifiers.RefusedToNotSettleCitiesNearUs, 1 / 4f)
         revertToZero(DiplomaticModifiers.BetrayedPromiseToNotSettleCitiesNearUs, 1 / 8f) // That's a bastardly thing to do
+        revertToZero(DiplomaticModifiers.BetrayedPromiseToNotSpreadReligionToUs, 1 / 8f)
         revertToZero(DiplomaticModifiers.UnacceptableDemands, 1 / 4f)
         revertToZero(DiplomaticModifiers.StealingTerritory, 1 / 4f)
         revertToZero(DiplomaticModifiers.DenouncedOurAllies, 1 / 4f)
@@ -286,7 +296,25 @@ object DiplomacyTurnManager {
         // Positives
         revertToZero(DiplomaticModifiers.GaveUsUnits, 1 / 4f)
         revertToZero(DiplomaticModifiers.LiberatedCity, 1 / 8f)
-        revertToZero(DiplomaticModifiers.GaveUsGifts, 1 / 4f)
+        if (hasModifier(DiplomaticModifiers.GaveUsGifts)) {
+            val giftLoss = when {
+                relationshipLevel() == RelationshipLevel.Ally -> 1f
+                relationshipLevel() == RelationshipLevel.Friend -> 1.5f
+                relationshipLevel() == RelationshipLevel.Favorable -> 2f
+                relationshipLevel() == RelationshipLevel.Neutral -> 2.5f
+                relationshipLevel() == RelationshipLevel.Competitor -> 5f
+                relationshipLevel() == RelationshipLevel.Enemy -> 7.5f
+                relationshipLevel() == RelationshipLevel.Unforgivable -> 10f
+                else -> 2.5f
+            } * civInfo.gameInfo.ruleset.modOptions.constants.goldGiftDegradationMultiplier
+            // We should subtract a certain amount from this balanced each turn
+            // Assuming neutral relations we will subtract the higher of either:
+            //  2.5% of the total amount or roughly 50 gold per turn (a value of ~.5 without inflation)
+            // This ensures that the amount can be reduced to zero but scales with larger numbers
+            val amountLost = (getModifier(DiplomaticModifiers.GaveUsGifts).absoluteValue * giftLoss / 100)
+                .coerceAtLeast(giftLoss / 5)
+            revertToZero(DiplomaticModifiers.GaveUsGifts, amountLost)
+        }
 
         setFriendshipBasedModifier()
 
@@ -300,7 +328,7 @@ object DiplomacyTurnManager {
         if (!hasFlag(DiplomacyFlags.DefensivePact))
             revertToZero(DiplomaticModifiers.DefensivePact, 1f)
 
-        if (!otherCiv().isCityState()) return
+        if (!otherCiv().isCityState) return
 
         if (isRelationshipLevelLT(RelationshipLevel.Friend)) {
             if (hasFlag(DiplomacyFlags.ProvideMilitaryUnit))
@@ -310,7 +338,8 @@ object DiplomacyTurnManager {
 
         val variance = listOf(-1, 0, 1).random()
 
-        val provideMilitaryUnitUniques = civInfo.cityStateFunctions.getCityStateBonuses(otherCiv().cityStateType, relationshipIgnoreAfraid(), UniqueType.CityStateMilitaryUnits)
+        val provideMilitaryUnitUniques = civInfo.cityStateFunctions
+            .getCityStateBonuses(otherCiv().cityStateType, relationshipIgnoreAfraid(), UniqueType.CityStateMilitaryUnits)
             .filter { it.conditionalsApply(civInfo) }.toList()
         if (provideMilitaryUnitUniques.isEmpty()) removeFlag(DiplomacyFlags.ProvideMilitaryUnit)
 
@@ -326,7 +355,8 @@ object DiplomacyTurnManager {
     private fun DiplomacyManager.revertToZero(modifier: DiplomaticModifiers, amount: Float) {
         if (!hasModifier(modifier)) return
         val currentAmount = getModifier(modifier)
-        if (currentAmount > 0) addModifier(modifier, -amount)
+        if (amount >= currentAmount.absoluteValue) diplomaticModifiers.remove(modifier.name)
+        else if (currentAmount > 0) addModifier(modifier, -amount)
         else addModifier(modifier, amount)
     }
 

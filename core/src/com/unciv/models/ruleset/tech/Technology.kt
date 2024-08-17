@@ -33,6 +33,8 @@ class Technology: RulesetObject() {
     override fun getCivilopediaTextLines(ruleset: Ruleset) =
             TechnologyDescriptions.getCivilopediaTextLines(this, ruleset)
 
+    override fun era(ruleset: Ruleset) = ruleset.eras[era()]
+
     fun matchesFilter(filter: String): Boolean {
         return when (filter) {
             in Constants.all -> true
@@ -49,8 +51,8 @@ class Technology: RulesetObject() {
             // If an OnlyAvailableWhen there are multiple conditionals, one of which requires this tech,
             // then IHasUniques.techsRequiredByUniques() will list this tech as required (because it is),
             // but uniqueIsRequirementForThisTech() will *not* identify that OnlyAvailableWhen as a requirement for this tech (because it's more complicated than that).
-            && unique.conditionals.size == 1
-            && unique.conditionals[0].let { it.type == UniqueType.ConditionalTech && it.params[0] == name }
+            && unique.modifiers.size == 1
+            && unique.modifiers[0].let { it.type == UniqueType.ConditionalTech && it.params[0] == name }
 
     fun uniqueIsNotRequirementForThisTech(unique: Unique): Boolean = !uniqueIsRequirementForThisTech(unique)
 }
