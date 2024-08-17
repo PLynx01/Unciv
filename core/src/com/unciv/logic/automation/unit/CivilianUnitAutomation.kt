@@ -1,21 +1,23 @@
 package com.unciv.logic.automation.unit
 
-import com.unciv.Constants
 import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.civilization.managers.ReligionState
 import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.logic.map.tile.Tile
 import com.unciv.models.UnitActionType
+import com.unciv.models.ruleset.unique.UniqueTriggerActivation
 import com.unciv.models.ruleset.unique.UniqueType
+import com.unciv.ui.screens.worldscreen.unit.actions.UnitActionModifiers
 import com.unciv.ui.screens.worldscreen.unit.actions.UnitActions
 
 object CivilianUnitAutomation {
 
-    fun shouldClearTileForAddInCapitalUnits(unit: MapUnit, tile:Tile) = tile.getCity()?.isCapital() == true
+    fun shouldClearTileForAddInCapitalUnits(unit: MapUnit, tile: Tile) =
+        tile.getCity()?.isCapital() == true
         && !unit.hasUnique(UniqueType.AddInCapital)
         && unit.civ.units.getCivUnits().any { unit.hasUnique(UniqueType.AddInCapital) }
 
-    fun automateCivilianUnit(unit: MapUnit) {
+    fun automateCivilianUnit(unit: MapUnit, dangerousTiles: HashSet<Tile>) {
         if (tryRunAwayIfNeccessary(unit)) return
 
         if (shouldClearTileForAddInCapitalUnits(unit, unit.currentTile)) {
@@ -26,18 +28,14 @@ object CivilianUnitAutomation {
                 unit.movement.moveToTile(tilesCanMoveTo.minByOrNull { it.value.totalDistance }!!.key)
         }
 
-        val tilesWhereWeWillBeCaptured = unit.currentTile.getTilesInDistance(5)
-            .mapNotNull { it.militaryUnit }
-            .filter { it.civ.isAtWarWith(unit.civ) }
-            .flatMap { it.movement.getReachableTilesInCurrentTurn() }
-            .filter { it.militaryUnit?.civ != unit.civ }
-            .toSet()
-
         if (unit.hasUnique(UniqueType.FoundCity))
-            return SpecificUnitAutomation.automateSettlerActions(unit, tilesWhereWeWillBeCaptured)
+            return SpecificUnitAutomation.automateSettlerActions(unit, dangerousTiles)
+
+        if (unit.isAutomatingRoadConnection())
+            return unit.civ.getWorkerAutomation().roadToAutomation.automateConnectRoad(unit, dangerousTiles)
 
         if (unit.cache.hasUniqueToBuildImprovements)
-            return unit.civ.getWorkerAutomation().automateWorkerAction(unit, tilesWhereWeWillBeCaptured)
+            return unit.civ.getWorkerAutomation().automateWorkerAction(unit, dangerousTiles)
 
         if (unit.cache.hasUniqueToCreateWaterImprovements) {
             if (!unit.civ.getWorkerAutomation().automateWorkBoats(unit))
@@ -53,7 +51,7 @@ object CivilianUnitAutomation {
 
         if (unit.hasUnique(UniqueType.MayEnhanceReligion)
             && unit.civ.religionManager.religionState < ReligionState.EnhancedReligion
-            && unit.civ.religionManager.mayEnhanceReligionAtAll(unit)
+            && unit.civ.religionManager.mayEnhanceReligionAtAll()
         )
             return ReligiousUnitAutomation.enhanceReligion(unit)
 
@@ -75,14 +73,18 @@ object CivilianUnitAutomation {
         if (unit.civ.religionManager.maySpreadReligionAtAll(unit))
             return ReligiousUnitAutomation.automateMissionary(unit)
 
-        if (unit.hasUnique(UniqueType.PreventSpreadingReligion) || unit.canDoLimitedAction(Constants.removeHeresy))
+        if (unit.hasUnique(UniqueType.PreventSpreadingReligion) || unit.hasUnique(UniqueType.CanRemoveHeresy))
             return ReligiousUnitAutomation.automateInquisitor(unit)
 
         val isLateGame = isLateGame(unit.civ)
         // Great scientist -> Hurry research if late game
+        // Great writer -> Hurry policy  if late game
         if (isLateGame) {
             val hurriedResearch = UnitActions.invokeUnitAction(unit, UnitActionType.HurryResearch)
             if (hurriedResearch) return
+
+            val hurriedPolicy = UnitActions.invokeUnitAction(unit, UnitActionType.HurryPolicy)
+            if (hurriedPolicy) return
         }
 
         // Great merchant -> Conduct trade mission if late game and if not at war.
@@ -109,7 +111,6 @@ object CivilianUnitAutomation {
                 return
         }
 
-
         // This has to come after the individual abilities for the great people that can also place
         // instant improvements (e.g. great scientist).
         if (unit.hasUnique(UniqueType.ConstructImprovementInstantly)) {
@@ -117,8 +118,29 @@ object CivilianUnitAutomation {
             // includes great people plus moddable units
             val improvementCanBePlacedEventually =
                 SpecificUnitAutomation.automateImprovementPlacer(unit)
-            if (!improvementCanBePlacedEventually)
-                UnitActions.invokeUnitAction(unit, UnitActionType.StartGoldenAge)
+        }
+
+        if (unit.hasUnique(UniqueType.GainFreeBuildings)) {
+            val unique = unit.getMatchingUniques(UniqueType.GainFreeBuildings).first()
+            val buildingName = unique.params[0]
+            // Choose the city that is closest in distance and does not have the building constructed.
+            val cityToGainBuilding = unit.civ.cities.filter {
+                !it.cityConstructions.containsBuildingOrEquivalent(buildingName)
+                    && (unit.movement.canMoveTo(it.getCenterTile()) || unit.currentTile == it.getCenterTile())
+            }.minByOrNull {
+                val path = unit.movement.getShortestPath(it.getCenterTile())
+                path.size
+            }
+
+            if (cityToGainBuilding != null) {
+                if (unit.currentTile == cityToGainBuilding.getCenterTile()) {
+                    UniqueTriggerActivation.triggerUnique(unique, unit.civ, unit = unit, tile = unit.currentTile)
+                    UnitActionModifiers.activateSideEffects(unit, unique)
+                    return
+                }
+                else unit.movement.headTowards(cityToGainBuilding.getCenterTile())
+            }
+            return
         }
 
         // TODO: The AI tends to have a lot of great generals. Maybe there should be a cutoff
@@ -139,7 +161,7 @@ object CivilianUnitAutomation {
         // This is a little 'Bugblatter Beast of Traal': Run if we can attack an enemy
         // Cheaper than determining which enemies could attack us next turn
         val enemyUnitsInWalkingDistance = unit.movement.getDistanceToTiles().keys
-            .filter { UnitAutomation.containsEnemyMilitaryUnit(unit, it) }
+            .filter { unit.civ.threatManager.doesTileHaveMilitaryEnemy(it) }
 
         if (enemyUnitsInWalkingDistance.isNotEmpty() && !unit.baseUnit.isMilitary()
             && unit.getTile().militaryUnit == null && !unit.getTile().isCityCenter()) {
@@ -168,16 +190,9 @@ object CivilianUnitAutomation {
         }
         val tileFurthestFromEnemy = reachableTiles.keys
             .filter { unit.movement.canMoveTo(it) && unit.getDamageFromTerrain(it) < unit.health }
-            .maxByOrNull { countDistanceToClosestEnemy(unit, it) }
+            .maxByOrNull { unit.civ.threatManager.getDistanceToClosestEnemyUnit(unit.getTile(), 4, false) }
             ?: return // can't move anywhere!
         unit.movement.moveToTile(tileFurthestFromEnemy)
     }
 
-
-    private fun countDistanceToClosestEnemy(unit: MapUnit, tile: Tile): Int {
-        for (i in 1..3)
-            if (tile.getTilesAtDistance(i).any { UnitAutomation.containsEnemyMilitaryUnit(unit, it) })
-                return i
-        return 4
-    }
 }

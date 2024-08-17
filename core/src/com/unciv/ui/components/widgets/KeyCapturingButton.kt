@@ -11,6 +11,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable
 import com.badlogic.gdx.utils.Align
 import com.unciv.ui.components.UncivTooltip.Companion.addTooltip
+import com.unciv.ui.components.extensions.isControlKeyPressed
 import com.unciv.ui.components.fonts.Fonts
 import com.unciv.ui.components.input.KeyCharAndCode
 import com.unciv.ui.images.ImageGetter
@@ -94,7 +95,7 @@ class KeyCapturingButton(
     }
 
     private fun updateLabel() {
-        label.setText(if (current == KeyCharAndCode.UNKNOWN) "" else current.toString())
+        label.setText(if (current == KeyCharAndCode.BACK) "ESC/Back" else current.toString())
         updateStyle()
     }
     private fun updateStyle() {
@@ -116,10 +117,6 @@ class KeyCapturingButton(
 
     // Instead of storing a button reference one could use `(event?.listenerActor as? KeyCapturingButton)?.`
     private class ButtonListener(private val myButton: KeyCapturingButton) : ClickListener() {
-        private fun controlDown() =
-                Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT) ||
-                Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT)
-
         override fun enter(event: InputEvent?, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
             if (myButton.stage == null) return
             myButton.savedFocus = myButton.stage.keyboardFocus
@@ -133,11 +130,15 @@ class KeyCapturingButton(
         }
 
         override fun keyDown(event: InputEvent?, keycode: Int): Boolean {
-            if (keycode == Input.Keys.ESCAPE || keycode == Input.Keys.UNKNOWN) return false
+            if (keycode == Input.Keys.UNKNOWN) return false
             if (keycode == Input.Keys.CONTROL_LEFT || keycode == Input.Keys.CONTROL_RIGHT) return false
-            myButton.handleKey(keycode, controlDown())
+
+            myButton.handleKey(mapEscToBack(keycode), Gdx.input.isControlKeyPressed())
+            event?.cancel()
             return true
         }
+
+        private fun mapEscToBack(keycode: Int): Int = if (keycode == Input.Keys.ESCAPE) Input.Keys.BACK else keycode
 
         override fun clicked(event: InputEvent?, x: Float, y: Float) {
             if (tapCount < 2 || event?.target !is Image) return

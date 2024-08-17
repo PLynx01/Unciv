@@ -11,6 +11,7 @@ import com.unciv.ui.components.fonts.FontFamilyData
 import com.unciv.ui.components.fonts.Fonts
 import com.unciv.ui.components.input.KeyboardBindings
 import com.unciv.ui.screens.overviewscreen.EmpireOverviewCategories
+import com.unciv.ui.screens.worldscreen.NotificationsScroll
 import com.unciv.utils.Display
 import com.unciv.utils.ScreenOrientation
 import java.text.Collator
@@ -38,7 +39,7 @@ class GameSettings {
     var language: String = Constants.english
     @Transient
     var locale: Locale? = null
-    var screenSize:ScreenSize = ScreenSize.Small
+    var screenSize: ScreenSize = ScreenSize.Small
     var screenMode: Int = 0
     var tutorialsShown = HashSet<String>()
     var tutorialTasksCompleted = HashSet<String>()
@@ -67,6 +68,7 @@ class GameSettings {
     var automatedUnitsMoveOnTurnStart: Boolean = false
     var automatedUnitsCanUpgrade: Boolean = false
     var automatedUnitsChoosePromotions: Boolean = false
+    var citiesAutoBombardAtEndOfTurn: Boolean = false
 
     var showMinimap: Boolean = true
     var minimapSize: Int = 6    // default corresponds to 15% screen space
@@ -81,6 +83,7 @@ class GameSettings {
     var visualMods = HashSet<String>()
     var useDemographics: Boolean = false
     var showZoomButtons: Boolean = false
+    var forbidPopupClickBehindToClose: Boolean = false
 
     var notificationsLogMaxTurns = 5
 
@@ -90,6 +93,8 @@ class GameSettings {
     var androidHideSystemUi = true
 
     var multiplayer = GameSettingsMultiplayer()
+
+    var autoPlay = GameSettingsAutoPlay()
 
     var enableEspionageOption = false
 
@@ -112,8 +117,9 @@ class GameSettings {
 
     var keyBindings = KeyboardBindings()
 
-    /** NotificationScroll on Word Screen visibility control - mapped to NotificationsScroll.UserSetting enum */
-    var notificationScroll: String = ""
+    /** NotificationScroll on Word Screen visibility control - mapped to [NotificationsScroll.UserSetting] enum */
+    // Defaulting this to "" - and implement the fallback only in NotificationsScroll leads to Options popup and actual effect being in disagreement!
+    var notificationScroll: String = NotificationsScroll.UserSetting.default().name
 
     /** If on, selected notifications are drawn enlarged with wider padding */
     var enlargeSelectedNotification = true
@@ -245,9 +251,10 @@ class GameSettings {
 
     enum class NationPickerListMode { Icons, List }
 
-    enum class LocaleCode(var language: String, var country: String) {
+    enum class LocaleCode(val language: String, val country: String, val trueLanguage: String? = null) {
         Arabic("ar", "IQ"),
         Belarusian("be", "BY"),
+        Bosnian("bs", "BA"),
         BrazilianPortuguese("pt", "BR"),
         Bulgarian("bg", "BG"),
         Catalan("ca", "ES"),
@@ -267,6 +274,7 @@ class GameSettings {
         Italian("it", "IT"),
         Japanese("ja", "JP"),
         Korean("ko", "KR"),
+        Latin("la", "IT"),
         Latvian("lv", "LV"),
         Lithuanian("lt", "LT"),
         Malay("ms", "MY"),
@@ -278,6 +286,7 @@ class GameSettings {
         Portuguese("pt", "PT"),
         Romanian("ro", "RO"),
         Russian("ru", "RU"),
+        Rusyn("uk", "UA", "rus"), // No specific locale for rus exists, so use closest for collator
         Serbian("sr", "RS"),
         SimplifiedChinese("zh", "CN"),
         Slovak("sk", "SK"),
@@ -316,6 +325,20 @@ class GameSettings {
             val preEncodedAuthValue = "$userId:$serverPassword"
             return "Basic ${Base64Coder.encodeString(preEncodedAuthValue)}"
         }
+    }
+
+    class GameSettingsAutoPlay {
+        var showAutoPlayButton: Boolean = false
+        var autoPlayUntilEnd: Boolean = false
+        var autoPlayMaxTurns = 10
+        var fullAutoPlayAI: Boolean = true
+        var autoPlayMilitary: Boolean = true
+        var autoPlayCivilian: Boolean = true
+        var autoPlayEconomy: Boolean = true
+        var autoPlayTechnology: Boolean = true
+        var autoPlayPolicies: Boolean = true
+        var autoPlayReligion: Boolean = true
+        var autoPlayDiplomacy: Boolean = true
     }
 
     @Suppress("SuspiciousCallableReferenceInLambda")  // By @Azzurite, safe as long as that warning below is followed

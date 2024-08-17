@@ -8,6 +8,7 @@ import com.unciv.GUI
 import com.unciv.UncivGame
 import com.unciv.logic.automation.Automation
 import com.unciv.logic.city.City
+import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.map.tile.Tile
 import com.unciv.models.TutorialTrigger
 import com.unciv.models.UncivSound
@@ -46,7 +47,11 @@ import com.unciv.ui.screens.worldscreen.WorldScreen
 class CityScreen(
     internal val city: City,
     initSelectedConstruction: IConstruction? = null,
-    initSelectedTile: Tile? = null
+    initSelectedTile: Tile? = null,
+    /** City ambience sound player proxies can be passed from one CityScreen instance to the next
+     *  to avoid premature stops or rewinds. Only the fresh CityScreen from WorldScreen or Overview
+     *  will instantiate a new CityAmbiencePlayer and start playing. */
+    ambiencePlayer: CityAmbiencePlayer? = null
 ): BaseScreen(), RecreateOnResize {
     companion object {
         /** Distance from stage edges to floating widgets */
@@ -56,8 +61,19 @@ class CityScreen(
         const val wltkIconSize = 40f
     }
 
+    private val selectedCiv: Civilization = GUI.getWorldScreen().selectedCiv
+
+    private val isSpying = selectedCiv.gameInfo.isEspionageEnabled() && selectedCiv != city.civ
+
+    /**
+     * This is the regular civ city list if we are not spying, if we are spying then it is every foreign city that our spies are in
+     */
+    val viewableCities = if (isSpying) selectedCiv.espionageManager.getCitiesWithOurSpies()
+        .filter { it.civ !=  GUI.getWorldScreen().selectedCiv }
+    else city.civ.cities
+
     /** Toggles or adds/removes all state changing buttons */
-    val canChangeState = GUI.isAllowedChangeState()
+    val canChangeState = GUI.isAllowedChangeState() && !isSpying
 
     // Clockwise from the top-left
 
@@ -119,7 +135,7 @@ class CityScreen(
     // val should be OK as buying tiles is what changes this, and that would re-create the whole CityScreen
     private val nextTileToOwn = city.expansion.chooseNewTileToOwn()
 
-    private val cityAmbiencePlayer = CityAmbiencePlayer(city)
+    private var cityAmbiencePlayer: CityAmbiencePlayer?  = ambiencePlayer ?: CityAmbiencePlayer(city)
 
     init {
         if (city.isWeLoveTheKingDayActive() && UncivGame.Current.settings.citySoundsVolume > 0) {
@@ -132,6 +148,7 @@ class CityScreen(
 
         //stage.setDebugTableUnderMouse(true)
         stage.addActor(cityStatsTable)
+        // If we are spying then we shoulden't be able to see their construction screen.
         constructionsTable.addActorsToStage()
         stage.addActor(selectedConstructionTable)
         stage.addActor(tileTable)
@@ -143,11 +160,13 @@ class CityScreen(
         globalShortcuts.add(KeyboardBinding.NextCity) { page(1) }
     }
 
+    override fun getCivilopediaRuleset() = selectedCiv.gameInfo.ruleset
+
     internal fun update() {
         // Recalculate Stats
         city.cityStats.update()
 
-        constructionsTable.isVisible = true
+        constructionsTable.isVisible = !isSpying
         constructionsTable.update(selectedConstruction)
 
         updateWithoutConstructionAndMap()
@@ -309,7 +328,7 @@ class CityScreen(
     private fun addTiles() {
         val tileSetStrings = TileSetStrings()
         val cityTileGroups = city.getCenterTile().getTilesInDistance(5)
-                .filter { city.civ.hasExplored(it) }
+                .filter { selectedCiv.hasExplored(it) }
                 .map { CityTileGroup(city, it, tileSetStrings) }
 
         for (tileGroup in cityTileGroups) {
@@ -450,7 +469,7 @@ class CityScreen(
     fun selectConstruction(newConstruction: IConstruction) {
         selectedConstruction = newConstruction
         if (newConstruction is Building && newConstruction.hasCreateOneImprovementUnique()) {
-            val improvement = newConstruction.getImprovementToCreate(city.getRuleset())
+            val improvement = newConstruction.getImprovementToCreate(city.getRuleset(), city.civ)
             selectedQueueEntryTargetTile = if (improvement == null) null
                 else city.cityConstructions.getTileForImprovement(improvement.name)
         } else {
@@ -468,7 +487,7 @@ class CityScreen(
     fun clearSelection() = selectTile(null)
 
     fun startPickTileForCreatesOneImprovement(construction: Building, stat: Stat, isBuying: Boolean) {
-        val improvement = construction.getImprovementToCreate(city.getRuleset()) ?: return
+        val improvement = construction.getImprovementToCreate(city.getRuleset(), city.civ) ?: return
         pickTileData = PickTileForImprovementData(construction, improvement, isBuying, stat)
         updateTileGroups()
         ToastPopup("Please select a tile for this building's [${improvement.name}]", this)
@@ -487,21 +506,31 @@ class CityScreen(
         }
     }
 
+    private fun passOnCityAmbiencePlayer(): CityAmbiencePlayer? {
+        val player = cityAmbiencePlayer
+        cityAmbiencePlayer = null
+        return player
+    }
+
     fun page(delta: Int) {
-        val civInfo = city.civ
-        val numCities = civInfo.cities.size
+        // Normal order is create new, then dispose old. But CityAmbiencePlayer delegates to a single instance of MusicController,
+        // leading to one extra play followed by a stop for the city ambience sounds. To avoid that, we pass our player on and relinquish control.
+
+        val numCities = viewableCities.size
         if (numCities == 0) return
-        val indexOfCity = civInfo.cities.indexOf(city)
+        val indexOfCity = viewableCities.indexOf(city)
         val indexOfNextCity = (indexOfCity + delta + numCities) % numCities
-        val newCityScreen = CityScreen(civInfo.cities[indexOfNextCity])
+        val newCityScreen = CityScreen(viewableCities[indexOfNextCity], ambiencePlayer = passOnCityAmbiencePlayer())
         newCityScreen.update()
         game.replaceCurrentScreen(newCityScreen)
     }
 
-    override fun recreate(): BaseScreen = CityScreen(city)
+    // Don't use passOnCityAmbiencePlayer here - continuing play on the replacement screen would be nice,
+    // but the rapid firing of several resize events will get that un-synced, they would no longer stop on leaving.
+    override fun recreate(): BaseScreen = CityScreen(city, selectedConstruction, selectedTile)
 
     override fun dispose() {
-        cityAmbiencePlayer.dispose()
+        cityAmbiencePlayer?.dispose()
         super.dispose()
     }
 }
