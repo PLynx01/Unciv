@@ -60,7 +60,7 @@ class GameSettings {
     var unitSet: String? = Constants.defaultUnitset
     var skin: String = Constants.defaultSkin
     var showTutorials: Boolean = true
-    var autoAssignCityProduction: Boolean = true
+    var autoAssignCityProduction: Boolean = false
 
     /** This set of construction names has two effects:
      *  * Matching constructions are no longer candidates for [autoAssignCityProduction]
@@ -101,9 +101,6 @@ class GameSettings {
 
     var autoPlay = GameSettingsAutoPlay()
 
-    // This is a string not an enum so if tabs change it won't screw up the json serialization
-    //TODO remove line in a future update
-    var lastOverviewPage = EmpireOverviewCategories.Cities.name
     /** Holds EmpireOverviewScreen per-page persistable states */
     val overview = OverviewPersistableData()
 

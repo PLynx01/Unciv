@@ -53,11 +53,14 @@ class UnitManager(val civInfo: Civilization) {
         if (civInfo.cities.isEmpty()) return null
 
         val unit = civInfo.getEquivalentUnit(baseUnit)
+        val citiesNotInResistance = civInfo.cities.filterNot { it.isInResistance() }
+        
         val cityToAddTo = when {
             unit.isWaterUnit && (city == null || !city.isCoastal()) ->
+                citiesNotInResistance.filter { it.isCoastal() }.randomOrNull() ?:
                 civInfo.cities.filter { it.isCoastal() }.randomOrNull()
             city != null -> city
-            else -> civInfo.cities.random()
+            else -> citiesNotInResistance.randomOrNull() ?: civInfo.cities.random()
         } ?: return null // If we got a free water unit with no coastal city to place it in
         val placedUnit = placeUnitNearTile(cityToAddTo.location, unit.name)
         // silently bail if no tile to place the unit is found
@@ -100,9 +103,9 @@ class UnitManager(val civInfo: Civilization) {
                 if (!unique.hasTriggerConditional() && unique.conditionalsApply(StateForConditionals(civInfo, unit = unit)))
                     UniqueTriggerActivation.triggerUnique(unique, unit, triggerNotificationText = triggerNotificationText)
 
-            for (unique in civInfo.getTriggeredUniques(UniqueType.TriggerUponGainingUnit))
-                if (unique.getModifiers(UniqueType.TriggerUponGainingUnit).any { unit.matchesFilter(it.params[0]) })
-                    UniqueTriggerActivation.triggerUnique(unique, unit, triggerNotificationText = triggerNotificationText)
+            for (unique in civInfo.getTriggeredUniques(UniqueType.TriggerUponGainingUnit) 
+                    { unit.matchesFilter(it.params[0]) })
+                UniqueTriggerActivation.triggerUnique(unique, unit, triggerNotificationText = triggerNotificationText)
 
             if (unit.getResourceRequirementsPerTurn().isNotEmpty())
                 civInfo.cache.updateCivResources()

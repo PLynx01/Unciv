@@ -3,7 +3,6 @@ package com.unciv.logic.automation.unit
 import com.unciv.Constants
 import com.unciv.UncivGame
 import com.unciv.logic.automation.Automation
-import com.unciv.logic.automation.civilization.NextTurnAutomation
 import com.unciv.logic.battle.Battle
 import com.unciv.logic.battle.BattleDamage
 import com.unciv.logic.battle.CityCombatant
@@ -24,6 +23,7 @@ import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.models.ruleset.unit.BaseUnit
 import com.unciv.ui.screens.worldscreen.unit.actions.UnitActionsPillage
 import com.unciv.ui.screens.worldscreen.unit.actions.UnitActionsUpgrade
+import com.unciv.utils.randomWeighted
 
 object UnitAutomation {
 
@@ -67,10 +67,8 @@ object UnitAutomation {
 
         val tileWithRuinOrEncampment = unit.viewableTiles
             .firstOrNull {
-                (
-                        (it.improvement != null && it.getTileImprovement()!!.isAncientRuinsEquivalent())
-                                || it.improvement == Constants.barbarianEncampment
-                        )
+                (it.getTileImprovement()?.isAncientRuinsEquivalent() == true
+                                || it.improvement == Constants.barbarianEncampment)
                         && unit.movement.canMoveTo(it) && unit.movement.canReach(it)
             } ?: return false
         unit.movement.headTowards(tileWithRuinOrEncampment)
@@ -185,9 +183,13 @@ object UnitAutomation {
             val availablePromotions = unit.promotions.getAvailablePromotions()
                 .filterNot { it.hasUnique(UniqueType.SkipPromotion) }
             if (availablePromotions.none()) break
-            unit.promotions.addPromotion(
-                availablePromotions.filter { it.hasUnique(UniqueType.FreePromotion) }.toList().randomOrNull()?.name
-                    ?: availablePromotions.toList().random().name)
+            val freePromotions = availablePromotions.filter { it.hasUnique(UniqueType.FreePromotion) }.toList()
+            val stateForConditionals = StateForConditionals(unit)
+            
+            val chosenPromotion = if (freePromotions.isNotEmpty()) freePromotions.randomWeighted { it.getWeightForAiDecision(stateForConditionals) }
+            else availablePromotions.toList().randomWeighted { it.getWeightForAiDecision(stateForConditionals) }
+            
+            unit.promotions.addPromotion(chosenPromotion.name)
         }
 
         //This allows for military units with certain civilian abilities to behave as civilians in peace and soldiers in war
@@ -217,8 +219,6 @@ object UnitAutomation {
         if (tryAccompanySettlerOrGreatPerson(unit)) return
 
         if (tryGoToRuinAndEncampment(unit) && !unit.hasMovement()) return
-
-        if (tryUpgradeUnit(unit)) return
 
         if (unit.health < 50 && (tryRetreat(unit) || tryHealUnit(unit))) return // do nothing but heal
 
@@ -289,7 +289,6 @@ object UnitAutomation {
     }
 
     private fun tryRetreat(unit: MapUnit): Boolean {
-        if (!unit.civ.isAtWar()) return false
         // Precondition: This must be a military unit
         if (unit.isCivilian()) return false
         if (unit.baseUnit.isAirUnit()) return false

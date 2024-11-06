@@ -29,11 +29,11 @@ import com.unciv.models.ruleset.unique.StateForConditionals
 import com.unciv.models.ruleset.unique.Unique
 import com.unciv.models.ruleset.unique.UniqueMap
 import com.unciv.models.ruleset.unique.UniqueType
-import com.unciv.ui.components.extensions.withItem
-import com.unciv.ui.components.extensions.withoutItem
 import com.unciv.ui.components.fonts.Fonts
 import com.unciv.utils.DebugUtils
 import com.unciv.utils.Log
+import com.unciv.utils.withItem
+import com.unciv.utils.withoutItem
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.random.Random
@@ -155,7 +155,7 @@ class Tile : IsPartOfGameInfoSerialization, Json.Serializable {
         private set
 
     @Transient
-    var terrainUniqueMap = UniqueMap()
+    var terrainUniqueMap = UniqueMap.EMPTY
         private set
 
     @Transient
@@ -366,16 +366,18 @@ class Tile : IsPartOfGameInfoSerialization, Json.Serializable {
 
     fun isRoughTerrain() = allTerrains.any { it.isRough() }
 
+    @delegate:Transient
+    private val stateThisTile: StateForConditionals by lazy { StateForConditionals(tile = this) }
     /** Checks whether any of the TERRAINS of this tile has a certain unique */
-    fun terrainHasUnique(uniqueType: UniqueType, state: StateForConditionals = StateForConditionals(tile = this)) =
+    fun terrainHasUnique(uniqueType: UniqueType, state: StateForConditionals = stateThisTile) =
         terrainUniqueMap.getMatchingUniques(uniqueType, state).any()
     /** Get all uniques of this type that any TERRAIN on this tile has */
-    fun getTerrainMatchingUniques(uniqueType: UniqueType, stateForConditionals: StateForConditionals = StateForConditionals(tile = this) ): Sequence<Unique> {
+    fun getTerrainMatchingUniques(uniqueType: UniqueType, stateForConditionals: StateForConditionals = stateThisTile ): Sequence<Unique> {
         return terrainUniqueMap.getMatchingUniques(uniqueType, stateForConditionals)
     }
 
     /** Get all uniques of this type that any part of this tile has: terrains, improvement, resource */
-    fun getMatchingUniques(uniqueType: UniqueType, stateForConditionals: StateForConditionals = StateForConditionals(tile=this)): Sequence<Unique> {
+    fun getMatchingUniques(uniqueType: UniqueType, stateForConditionals: StateForConditionals = stateThisTile): Sequence<Unique> {
         var uniques = getTerrainMatchingUniques(uniqueType, stateForConditionals)
         if (getUnpillagedImprovement() != null) {
             val tileImprovement = getTileImprovement()
@@ -390,7 +392,8 @@ class Tile : IsPartOfGameInfoSerialization, Json.Serializable {
 
     fun getWorkingCity(): City? {
         val civInfo = getOwner() ?: return null
-        return civInfo.cities.firstOrNull { it.isWorked(this) }
+        if (owningCity?.isWorked(this) == true) return owningCity // common case
+        return civInfo.cities.firstOrNull { it != owningCity && it.isWorked(this) }
     }
 
     fun isBlockaded(): Boolean {
@@ -422,7 +425,8 @@ class Tile : IsPartOfGameInfoSerialization, Json.Serializable {
     fun isWorked(): Boolean = getWorkingCity() != null
     fun providesYield(): Boolean {
         if (getCity() == null) return false
-        return isCityCenter() || isWorked()
+        return isCityCenter()
+                || isWorked()
                 || getUnpillagedTileImprovement()?.hasUnique(UniqueType.TileProvidesYieldWithoutPopulation) == true
                 || terrainHasUnique(UniqueType.TileProvidesYieldWithoutPopulation)
     }
@@ -516,8 +520,8 @@ class Tile : IsPartOfGameInfoSerialization, Json.Serializable {
                 val resourceObject = tileResource
                 val hasResourceWithFilter =
                         tileResource.name == filter
-                                || tileResource.hasUnique(filter)
-                                || tileResource.resourceType.name + " resource" == filter
+                                || tileResource.hasTagUnique(filter)
+                                || filter.removeSuffix(" resource") == tileResource.resourceType.name
                 if (!hasResourceWithFilter) return false
 
                 // Now that we know that this resource matches the filter - can the observer see that there's a resource here?
@@ -531,13 +535,12 @@ class Tile : IsPartOfGameInfoSerialization, Json.Serializable {
     fun isCoastalTile() = _isCoastalTile
 
     fun hasViewableResource(civInfo: Civilization): Boolean =
-            resource != null && (tileResource.revealedBy == null || civInfo.tech.isResearched(
-                tileResource.revealedBy!!))
+            resource != null && civInfo.tech.isRevealed(tileResource)
 
     fun getViewableTilesList(distance: Int): List<Tile> = tileMap.getViewableTiles(position, distance)
     fun getTilesInDistance(distance: Int): Sequence<Tile> = tileMap.getTilesInDistance(position, distance)
     fun getTilesInDistanceRange(range: IntRange): Sequence<Tile> = tileMap.getTilesInDistanceRange(position, range)
-    fun getTilesAtDistance(distance: Int): Sequence<Tile> =tileMap.getTilesAtDistance(position, distance)
+    fun getTilesAtDistance(distance: Int): Sequence<Tile> = tileMap.getTilesAtDistance(position, distance)
 
     fun getDefensiveBonus(includeImprovementBonus: Boolean = true): Float {
         var bonus = baseTerrainObject.defenceBonus
@@ -548,7 +551,7 @@ class Tile : IsPartOfGameInfoSerialization, Json.Serializable {
         if (naturalWonder != null) bonus += getNaturalWonder().defenceBonus
         val tileImprovement = getUnpillagedTileImprovement()
         if (tileImprovement != null && includeImprovementBonus) {
-            for (unique in tileImprovement.getMatchingUniques(UniqueType.DefensiveBonus, StateForConditionals(tile = this)))
+            for (unique in tileImprovement.getMatchingUniques(UniqueType.DefensiveBonus, stateThisTile))
                 bonus += unique.params[0].toFloat() / 100
         }
         return bonus
@@ -690,6 +693,8 @@ class Tile : IsPartOfGameInfoSerialization, Json.Serializable {
         return if (probability == 0.0) 0.04  // This is the default of 1 per 25 tiles
         else probability
     }
+    
+    fun isTilemapInitialized() = ::tileMap.isInitialized
 
     //endregion
     //region state-changing functions
@@ -712,7 +717,7 @@ class Tile : IsPartOfGameInfoSerialization, Json.Serializable {
         isOcean = baseTerrain == Constants.ocean
 
         // Resource amounts missing - Old save or bad mapgen?
-        if (::tileMap.isInitialized && resource != null && tileResource.resourceType == ResourceType.Strategic && resourceAmount == 0) {
+        if (isTilemapInitialized() && resource != null && tileResource.resourceType == ResourceType.Strategic && resourceAmount == 0) {
             // Let's assume it's a small deposit
             setTileResource(tileResource, majorDeposit = false)
         }
@@ -763,7 +768,7 @@ class Tile : IsPartOfGameInfoSerialization, Json.Serializable {
             return
         }
 
-        for (unique in newResource.getMatchingUniques(UniqueType.ResourceAmountOnTiles, StateForConditionals(tile = this))) {
+        for (unique in newResource.getMatchingUniques(UniqueType.ResourceAmountOnTiles, stateThisTile)) {
             if (matchesTerrainFilter(unique.params[0])) {
                 resourceAmount = unique.params[1].toInt()
                 return
@@ -812,7 +817,7 @@ class Tile : IsPartOfGameInfoSerialization, Json.Serializable {
     }
 
     private fun updateUniqueMap() {
-        if (!::tileMap.isInitialized) return // This tile is a fake tile, for visual display only (e.g. map editor, civilopedia)
+        if (!isTilemapInitialized()) return // This tile is a fake tile, for visual display only (e.g. map editor, civilopedia)
         val terrainNameList = allTerrains.map { it.name }.toList()
 
         // List hash is function of all its items, so the same items in the same order will always give the same hash
@@ -826,8 +831,10 @@ class Tile : IsPartOfGameInfoSerialization, Json.Serializable {
             setTerrainFeatures(ArrayList(terrainFeatures).apply { add(terrainFeature) })
     }
 
-    fun removeTerrainFeature(terrainFeature: String) =
-        setTerrainFeatures(ArrayList(terrainFeatures).apply { remove(terrainFeature) })
+    fun removeTerrainFeature(terrainFeature: String) {
+        if (terrainFeature in terrainFeatures)
+            setTerrainFeatures(ArrayList(terrainFeatures).apply { remove(terrainFeature) })
+    }
 
     fun removeTerrainFeatures() =
         setTerrainFeatures(listOf())

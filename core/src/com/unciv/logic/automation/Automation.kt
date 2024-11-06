@@ -21,6 +21,8 @@ import com.unciv.models.ruleset.unit.BaseUnit
 import com.unciv.models.stats.Stat
 import com.unciv.models.stats.Stats
 import com.unciv.ui.screens.victoryscreen.RankingType
+import kotlin.math.min
+
 
 object Automation {
 
@@ -64,33 +66,51 @@ object Automation {
         }
 
         val surplusFood = city.cityStats.currentCityStats[Stat.Food]
+        val starving = surplusFood < 0
         // If current Production converts Food into Production, then calculate increased Production Yield
         if (cityStatsObj.canConvertFoodToProduction(surplusFood, city.cityConstructions.getCurrentConstruction())) {
             // calculate delta increase of food->prod. This isn't linear
             yieldStats.production += cityStatsObj.getProductionFromExcessiveFood(surplusFood+yieldStats.food) - cityStatsObj.getProductionFromExcessiveFood(surplusFood)
             yieldStats.food = 0f  // all food goes to 0
         }
+
+        // Split Food Yield into feedFood, amount needed to not Starve
+        // and growthFood, any amount above that
+        var feedFood = 0f
+        if (starving)
+            feedFood = min(yieldStats.food, -surplusFood).coerceAtLeast(0f)
+        var growthFood = yieldStats.food - feedFood // how much extra Food we yield
+        // Avoid Growth, only count Food that gets you not-starving, but no more
+        if (city.avoidGrowth) {
+            growthFood = 0f
+        }
+        yieldStats.food = 1f
+        
         // Apply base weights
         yieldStats.applyRankingWeights()
 
-        if (surplusFood > 0 && city.avoidGrowth) {
-            yieldStats.food = 0f // don't need more food!
-        } else if (cityAIFocus in CityFocus.zeroFoodFocuses) {
+        val foodBaseWeight = yieldStats.food
+
+        // If starving, need Food, so feedFood > 0
+        // scale feedFood by 14(base weight)*8(super important)
+        // By only scaling what we need to reach Not Starving by x8, we can pick a tile that gives
+        // exactly as much Food as we need to Not Starve that also has other good yields instead of
+        // always picking the Highest Food tile until Not Starving
+        yieldStats.food = feedFood * (foodBaseWeight * 8)
+        // growthFood is any additional food not required to meet Starvation
+        if (cityAIFocus in CityFocus.zeroFoodFocuses) {
             // Focus on non-food/growth
-            if (surplusFood < 0)
-                yieldStats.food *= 8 // Starving, need Food, get to 0
-            else
-                yieldStats.food /= 2
-        } else if (!city.avoidGrowth) {
-            // NoFocus or Food/Growth Focus. Target +10 Food Surplus when happy
-            if (surplusFood < 0)
-                yieldStats.food *= 8 // Starving, need Food, get to 0
-            else if (surplusFood < 10 && city.civ.getHappiness() > -1)
-                yieldStats.food *= 2
-            else if (city.civ.getHappiness() < 0) {
-                // 75% of excess food is wasted when in negative happiness
-                yieldStats.food /= 4
-            }
+            // Reduce excess food focus to prevent Happiness spiral
+            if (city.civ.getHappiness() < 1)
+                yieldStats.food += growthFood * (foodBaseWeight / 4)
+        } else {
+            // NoFocus or Food/Growth Focus.
+            // When Happy, EmperorPenguin has run sims comparing weights
+            // 1.5f is preferred,
+            // but 2 provides more protection against badly configured personalities
+            // If unhappy, see above
+            val growthFoodScaling = if (city.civ.getHappiness() >= 0) foodBaseWeight * 2 else foodBaseWeight / 4
+            yieldStats.food += growthFood * growthFoodScaling
         }
 
         if (city.population.population < 10) {
@@ -159,6 +179,7 @@ object Automation {
         val totalCarriableUnits =
             civInfo.units.getCivUnits().count { it.matchesFilter(carryFilter) }
         val totalCarryingSlots = civInfo.units.getCivUnits().sumOf { getCarryAmount(it) }
+                
         return totalCarriableUnits < totalCarryingSlots
     }
 
@@ -180,9 +201,9 @@ object Automation {
 
             val numberOfOurConnectedCities = findWaterConnectedCitiesAndEnemies.getReachedTiles()
                 .count { it.isCityCenter() && it.getOwner() == city.civ }
-            val numberOfOurNavalMeleeUnits = findWaterConnectedCitiesAndEnemies.getReachedTiles().asSequence()
-                .flatMap { it.getUnits() }
-                .count { isNavalMeleeUnit(it.baseUnit) }
+            val numberOfOurNavalMeleeUnits = findWaterConnectedCitiesAndEnemies.getReachedTiles()
+                .sumOf { it.getUnits().count { isNavalMeleeUnit(it.baseUnit) } }
+                
             isMissingNavalUnitsForCityDefence = numberOfOurConnectedCities > numberOfOurNavalMeleeUnits
 
             removeShips = findWaterConnectedCitiesAndEnemies.getReachedTiles().none {
@@ -197,7 +218,7 @@ object Automation {
             .filter { allowSpendingResource(city.civ, it) }
             .filterNot {
                 // filter out carrier-type units that can't attack if we don't need them
-                (it.hasUnique(UniqueType.CarryAirUnits) && it.hasUnique(UniqueType.CannotAttack))
+                it.hasUnique(UniqueType.CarryAirUnits)
                         && providesUnneededCarryingSlots(it, city.civ)
             }
             // Only now do we filter out the constructable units because that's a heavier check
@@ -470,16 +491,16 @@ object Automation {
 
     fun rankStatsValue(stats: Stats, civInfo: Civilization): Float {
         var rank = 0.0f
-        rank += if (stats.food <= 2)
-                    (stats.food * 1.2f) //food get more value to keep city growing
-                else
-                    (2.4f + (stats.food - 2) / 2) // 1.2 point for each food up to 2, from there on half a point
+        rank += stats.food * 1.2f //food get more value to keep city growing
 
         rank += if (civInfo.gold < 0 && civInfo.stats.statsForNextTurn.gold <= 0)
-                    stats.gold
+                    stats.gold //build more gold infrastructure if in serious gold problems
+        // This could lead to oscilliatory behaviour however: gold problem -> build trade post -> no gold problem -> replace trade posts -> gold problem
                 else
-                    stats.gold / 3 // 3 gold is much worse than 2 production
-
+                    stats.gold / 3 // Gold is valued less than is the case for citizen assignment,
+        //otherwise the AI would replace tiles with trade posts upon entering a golden age,
+        //and replace the trade post again when the golden age ends.
+        // We need a way to take golden age gold into account before the GA actually takes place
         rank += stats.happiness
         rank += stats.production
         rank += stats.science

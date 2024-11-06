@@ -96,8 +96,8 @@ class Nation : RulesetObject() {
         innerColorObject = if (innerColor == null) Color.BLACK
                            else colorFromRGB(innerColor!!)
 
-        forestsAndJunglesAreRoads = uniqueMap.containsKey(UniqueType.ForestsAndJunglesAreRoads.placeholderText)
-        ignoreHillMovementCost = uniqueMap.containsKey(UniqueType.IgnoreHillMovementCost.placeholderText)
+        forestsAndJunglesAreRoads = uniqueMap.hasUnique(UniqueType.ForestsAndJunglesAreRoads)
+        ignoreHillMovementCost = uniqueMap.hasUnique(UniqueType.IgnoreHillMovementCost)
     }
 
 
@@ -213,7 +213,7 @@ class Nation : RulesetObject() {
     private fun getUniqueUnitsText(ruleset: Ruleset) = sequence {
         for (unit in ruleset.units.values) {
             if (unit.isHiddenFromCivilopedia(ruleset)) continue
-            if (unit.uniqueTo != null && !matchesFilter(unit.uniqueTo!!)) continue
+            if (unit.uniqueTo == null || !matchesFilter(unit.uniqueTo!!)) continue
             yield(FormattedLine(separator = true))
             yield(FormattedLine("{${unit.name}} -", link = "Unit/${unit.name}"))
             if (unit.replaces != null && ruleset.units.containsKey(unit.replaces!!)) {
@@ -239,7 +239,8 @@ class Nation : RulesetObject() {
 
     private fun getUniqueImprovementsText(ruleset: Ruleset) = sequence {
         for (improvement in ruleset.tileImprovements.values) {
-            if (improvement.uniqueTo != name || improvement.isHiddenFromCivilopedia(ruleset)) continue
+            if (improvement.isHiddenFromCivilopedia(ruleset)) continue
+            if (improvement.uniqueTo == null || !matchesFilter(improvement.uniqueTo!!)) continue
 
             yield(FormattedLine(separator = true))
             yield(FormattedLine(improvement.name, link = "Improvement/${improvement.name}"))
@@ -256,9 +257,7 @@ class Nation : RulesetObject() {
             }
         }
     }
-
-    fun getContrastRatio() = getContrastRatio(getInnerColor(), getOuterColor())
-
+    
     fun matchesFilter(filter: String): Boolean {
         return MultiFilter.multiFilter(filter, ::matchesSingleFilter)
     }
@@ -268,8 +267,7 @@ class Nation : RulesetObject() {
             in Constants.all -> true
             name -> true
             "Major" -> isMajorCiv
-            // "CityState" to be deprecated, replaced by "City-States"
-            "CityState", Constants.cityStates -> isCityState
+            Constants.cityStates, "City-State" -> isCityState
             else -> uniques.contains(filter)
         }
     }

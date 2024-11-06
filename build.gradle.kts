@@ -3,12 +3,7 @@ import com.unciv.build.BuildConfig.coroutinesVersion
 import com.unciv.build.BuildConfig.gdxVersion
 import com.unciv.build.BuildConfig.kotlinVersion
 import com.unciv.build.BuildConfig.ktorVersion
-
-
-// You'll still get kotlin-reflect-1.3.70.jar in your classpath, but will no longer be used
-configurations.all { resolutionStrategy {
-    force("org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion")
-} }
+import com.unciv.build.BuildConfig.appVersion
 
 
 buildscript {
@@ -24,7 +19,7 @@ buildscript {
     }
     dependencies {
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${com.unciv.build.BuildConfig.kotlinVersion}")
-        classpath("com.android.tools.build:gradle:8.2.2")
+        classpath("com.android.tools.build:gradle:8.5.0")
     }
 }
 
@@ -36,16 +31,17 @@ kotlin {
 // Plugins used for serialization of JSON for networking
 plugins {
     id("io.gitlab.arturbosch.detekt").version("1.23.0-RC3")
-    kotlin("multiplatform") version "1.8.10"
-    kotlin("plugin.serialization") version "1.8.10"
+    // For some weird reason, the *docker build* fails to recognize linking to the shared kotlinVersion in plugins
+    // This is *with* gradle 8.2 downloaded according the project specs, no idea what that's about
+    kotlin("multiplatform") version "1.9.24"
+    kotlin("plugin.serialization") version "1.9.24"
 }
 
 allprojects {
     apply(plugin = "eclipse")
     apply(plugin = "idea")
-
-
-    version = "1.0.1"
+    
+    version = appVersion
 
     repositories {
         // Chinese mirrors for quicker loading for chinese devs - uncomment if you're chinese
@@ -71,8 +67,10 @@ project(":desktop") {
             exclude("com.badlogicgames.gdx", "gdx-backend-lwjgl")
         }
 
+        // Needed to display "Playing Unciv" in Discord
         "implementation"("com.github.MinnDevelopment:java-discord-rpc:v2.0.1")
 
+        // Needed for Windows turn notifiers
         "implementation"("net.java.dev.jna:jna:5.11.0")
         "implementation"("net.java.dev.jna:jna-platform:5.11.0")
     }
@@ -92,22 +90,24 @@ project(":server") {
 
 }
 
-project(":android") {
-    apply(plugin = "com.android.application")
-    apply(plugin = "kotlin-android")
+if (System.getenv("ANDROID_HOME") != null) {
+    project(":android") {
+        apply(plugin = "com.android.application")
+        apply(plugin = "kotlin-android")
 
-    val natives by configurations.creating
+        val natives by configurations.creating
 
-    dependencies {
-        "implementation"(project(":core"))
-        // Not sure why I had to add this in for the upgrade to 1.12.1 to work, we can probably remove this later since it's contained in core
-        "implementation"("com.badlogicgames.gdx:gdx:$gdxVersion")
-        "implementation"("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
-        "implementation"("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion")
-        natives("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-armeabi-v7a")
-        natives("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-arm64-v8a")
-        natives("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86")
-        natives("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86_64")
+        dependencies {
+            "implementation"(project(":core"))
+            // Not sure why I had to add this in for the upgrade to 1.12.1 to work, we can probably remove this later since it's contained in core
+            "implementation"("com.badlogicgames.gdx:gdx:$gdxVersion")
+            "implementation"("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
+            "implementation"("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion")
+            natives("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-armeabi-v7a")
+            natives("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-arm64-v8a")
+            natives("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86")
+            natives("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86_64")
+        }
     }
 }
 
@@ -144,7 +144,7 @@ project(":core") {
             "implementation"("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutinesVersion")
 
             "implementation"("junit:junit:4.13.2")
-            "implementation"("org.mockito:mockito-core:5.1.1")
+            "implementation"("org.mockito:mockito-core:5.13.0")
 
             "implementation"("com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion")
             "implementation"("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop")

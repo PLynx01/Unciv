@@ -47,11 +47,7 @@ import com.unciv.models.ruleset.tile.ResourceSupplyList
 import com.unciv.models.ruleset.tile.ResourceType
 import com.unciv.models.ruleset.tile.TileImprovement
 import com.unciv.models.ruleset.tile.TileResource
-import com.unciv.models.ruleset.unique.StateForConditionals
-import com.unciv.models.ruleset.unique.TemporaryUnique
-import com.unciv.models.ruleset.unique.Unique
-import com.unciv.models.ruleset.unique.UniqueType
-import com.unciv.models.ruleset.unique.getMatchingUniques
+import com.unciv.models.ruleset.unique.*
 import com.unciv.models.ruleset.unit.BaseUnit
 import com.unciv.models.stats.Stat
 import com.unciv.models.stats.Stats
@@ -119,6 +115,9 @@ class Civilization : IsPartOfGameInfoSerialization {
 
     @Transient
     var summarizedCivResourceSupply = ResourceSupplyList()
+    
+    @Transient
+    var civResourcesUniqueMap = UniqueMap()
 
     @Transient
     val cityStateFunctions = CityStateFunctions(this)
@@ -389,7 +388,7 @@ class Civilization : IsPartOfGameInfoSerialization {
         if (victoryTypes.size == 1)
             return listOf(victoryTypes.first()) // That is the most relevant one
         val victoryType: List<String> = listOf(nation.preferredVictoryType, getPersonality().preferredVictoryType)
-            .filter { it in gameInfo.gameParameters.victoryTypes }
+            .filter { it in gameInfo.gameParameters.victoryTypes && it in gameInfo.ruleset.victories }
         return victoryType.ifEmpty { listOf(Constants.neutralVictoryType) }
 
     }
@@ -535,28 +534,25 @@ class Civilization : IsPartOfGameInfoSerialization {
         if (religionManager.religion != null)
             yieldAll(religionManager.religion!!.founderBeliefUniqueMap.getMatchingUniques(uniqueType, stateForConditionals))
 
-        yieldAll(getCivResourceSupply().asSequence()
-            .filter { it.amount > 0 }
-            .flatMap { it.resource.getMatchingUniques(uniqueType, stateForConditionals) }
-        )
-
+        yieldAll(civResourcesUniqueMap.getMatchingUniques(uniqueType, stateForConditionals))
         yieldAll(gameInfo.ruleset.globalUniques.getMatchingUniques(uniqueType, stateForConditionals))
     }
 
     fun getTriggeredUniques(
         trigger: UniqueType,
-        stateForConditionals: StateForConditionals = StateForConditionals(this)
+        stateForConditionals: StateForConditionals = StateForConditionals(this),
+        triggerFilter: (Unique) -> Boolean = { true }
     ) : Iterable<Unique> = sequence {
-        yieldAll(nation.uniqueMap.getTriggeredUniques(trigger, stateForConditionals))
+        yieldAll(nation.uniqueMap.getTriggeredUniques(trigger, stateForConditionals, triggerFilter))
         yieldAll(cities.asSequence()
-            .flatMap { city -> city.cityConstructions.builtBuildingUniqueMap.getTriggeredUniques(trigger, stateForConditionals) }
+            .flatMap { city -> city.cityConstructions.builtBuildingUniqueMap.getTriggeredUniques(trigger, stateForConditionals, triggerFilter) }
         )
         if (religionManager.religion != null)
-            yieldAll(religionManager.religion!!.founderBeliefUniqueMap.getMatchingUniques(trigger, stateForConditionals))
-        yieldAll(policies.policyUniques.getTriggeredUniques(trigger, stateForConditionals))
-        yieldAll(tech.techUniques.getTriggeredUniques(trigger, stateForConditionals))
-        yieldAll(getEra().uniqueMap.getTriggeredUniques (trigger, stateForConditionals))
-        yieldAll(gameInfo.ruleset.globalUniques.uniqueMap.getTriggeredUniques(trigger, stateForConditionals))
+            yieldAll(religionManager.religion!!.founderBeliefUniqueMap.getTriggeredUniques(trigger, stateForConditionals, triggerFilter))
+        yieldAll(policies.policyUniques.getTriggeredUniques(trigger, stateForConditionals, triggerFilter))
+        yieldAll(tech.techUniques.getTriggeredUniques(trigger, stateForConditionals, triggerFilter))
+        yieldAll(getEra().uniqueMap.getTriggeredUniques (trigger, stateForConditionals, triggerFilter))
+        yieldAll(gameInfo.ruleset.globalUniques.uniqueMap.getTriggeredUniques(trigger, stateForConditionals, triggerFilter))
     }.toList() // Triggers can e.g. add buildings which contain triggers, causing concurrent modification errors
 
 
@@ -677,7 +673,7 @@ class Civilization : IsPartOfGameInfoSerialization {
         else when (category) {
                 RankingType.Score -> calculateTotalScore().toInt()
                 RankingType.Population -> cities.sumOf { it.population.population }
-                RankingType.CropYield -> stats.statsForNextTurn.food.roundToInt()
+                RankingType.Growth -> stats.statsForNextTurn.food.roundToInt()
                 RankingType.Production -> stats.statsForNextTurn.production.roundToInt()
                 RankingType.Gold -> gold
                 RankingType.Territory -> cities.sumOf { it.tiles.size }

@@ -95,6 +95,21 @@ class MapUnit : IsPartOfGameInfoSerialization {
 
     /** Array list of all the tiles that this unit has attacked since the start of its most recent turn. Used in movement arrow overlay. */
     var attacksSinceTurnStart = ArrayList<Vector2>()
+    
+    class UnitStatus {
+        var name:String = ""
+        /** Decreses at *start on next turn* so defensive statuses persist on enemy turns */
+        var turnsLeft = 1
+        
+        @Transient
+        lateinit var uniques: List<Unique>
+        
+        fun setTransients(unit: MapUnit) {
+            uniques = unit.civ.gameInfo.ruleset.unitPromotions[name]?.uniqueObjects ?: emptyList()
+        }
+    }
+    
+    var statuses = ArrayList<UnitStatus>()
 
     //endregion
     //region Transient fields
@@ -198,6 +213,7 @@ class MapUnit : IsPartOfGameInfoSerialization {
         toReturn.religion = religion
         toReturn.religiousStrengthLost = religiousStrengthLost
         toReturn.movementMemories = movementMemories.copy()
+        toReturn.statuses = ArrayList(statuses) 
         toReturn.mostRecentMoveType = mostRecentMoveType
         toReturn.attacksSinceTurnStart = ArrayList(attacksSinceTurnStart.map { Vector2(it) })
         return toReturn
@@ -221,9 +237,10 @@ class MapUnit : IsPartOfGameInfoSerialization {
     fun isActionUntilHealed() = action?.endsWith("until healed") == true
 
     fun isFortified() = action?.startsWith(UnitActionType.Fortify.value) == true
+    fun isGuarding() = action?.equals(UnitActionType.Guard.value) == true
     fun isFortifyingUntilHealed() = isFortified() && isActionUntilHealed()
     fun getFortificationTurns(): Int {
-        if (!isFortified()) return 0
+        if (!(isFortified() || isGuarding())) return 0
         return turnsFortified
     }
 
@@ -257,10 +274,10 @@ class MapUnit : IsPartOfGameInfoSerialization {
                 !tile.isMarkedForCreatesOneImprovement()
         ) return false
         if (includeOtherEscortUnit && isEscorting() && !getOtherEscortUnit()!!.isIdle(false)) return false
-        return !(isFortified() || isExploring() || isSleeping() || isAutomated() || isMoving())
+        return !(isFortified() || isExploring() || isSleeping() || isAutomated() || isMoving() || isGuarding())
     }
 
-    fun getUniques(): Sequence<Unique> = tempUniquesMap.values.asSequence().flatten()
+    fun getUniques(): Sequence<Unique> = tempUniquesMap.getAllUniques()
 
     fun getMatchingUniques(
             uniqueType: UniqueType,
@@ -283,14 +300,13 @@ class MapUnit : IsPartOfGameInfoSerialization {
     }
 
     fun getTriggeredUniques(
-            trigger: UniqueType,
-            stateForConditionals: StateForConditionals = StateForConditionals(civInfo = civ, unit = this)
+        trigger: UniqueType,
+        stateForConditionals: StateForConditionals = StateForConditionals(civInfo = civ, unit = this),
+        triggerFilter: (Unique) -> Boolean = { true }
     ): Sequence<Unique> {
-        return getUniques().filter { unique ->
-            unique.hasModifier(trigger)
-                    && unique.conditionalsApply(stateForConditionals)
-        }
+        return tempUniquesMap.getTriggeredUniques(trigger, stateForConditionals, triggerFilter)
     }
+    
 
     /** Gets *per turn* resource requirements - does not include immediate costs for stockpiled resources.
      * StateForConditionals is assumed to regarding this mapUnit*/
@@ -561,7 +577,7 @@ class MapUnit : IsPartOfGameInfoSerialization {
             else -> {
                 if (baseUnit.matchesFilter(filter)) return true
                 if (civ.matchesFilter(filter)) return true
-                if (tempUniquesMap.containsKey(filter)) return true
+                if (tempUniquesMap.hasTagUnique(filter)) return true
                 if (promotions.promotions.contains(filter)) return true
                 return false
             }
@@ -628,6 +644,7 @@ class MapUnit : IsPartOfGameInfoSerialization {
         promotions.setTransients(this)
         baseUnit = ruleset.units[name]
                 ?: throw java.lang.Exception("Unit $name is not found!")
+        for (status in statuses) status.setTransients(this)
 
         updateUniques()
         if (action == UnitActionType.Automate.value){
@@ -640,7 +657,9 @@ class MapUnit : IsPartOfGameInfoSerialization {
         val uniqueSources =
                 baseUnit.uniqueObjects.asSequence() +
                         type.uniqueObjects +
-                        promotions.getPromotions().flatMap { it.uniqueObjects }
+                        promotions.getPromotions().flatMap { it.uniqueObjects } +
+                        statuses.flatMap { it.uniques }
+        
         tempUniquesMap = UniqueMap(uniqueSources)
         cache.updateUniques()
     }
@@ -815,10 +834,9 @@ class MapUnit : IsPartOfGameInfoSerialization {
 
     /** Destroys the unit and gives stats if its a great person */
     fun consume() {
-        for (unique in civ.getTriggeredUniques(UniqueType.TriggerUponExpendingUnit))
-            if (unique.getModifiers(UniqueType.TriggerUponExpendingUnit).any { matchesFilter(it.params[0]) })
-                UniqueTriggerActivation.triggerUnique(unique, this,
-                    triggerNotificationText = "due to expending our [${this.name}]")
+        for (unique in civ.getTriggeredUniques(UniqueType.TriggerUponExpendingUnit){ matchesFilter(it.params[0]) })
+            UniqueTriggerActivation.triggerUnique(unique, this,
+                triggerNotificationText = "due to expending our [${this.name}]")
         destroy()
     }
 
@@ -1006,6 +1024,34 @@ class MapUnit : IsPartOfGameInfoSerialization {
             // The exception is when a unit changes position when not in its turn, such as by melee withdrawal or foreign territory expulsion. Then the segment here and the segment from the end of here to the current position can both be shown.
             movementMemories.removeFirst()
         }
+    }
+    
+    fun setStatus(name:String, turns:Int){
+        val existingStatus = statuses.firstOrNull { it.name == name }
+        if (existingStatus != null){
+            if (turns > existingStatus.turnsLeft) existingStatus.turnsLeft = turns
+            return
+        }
+        
+        val status = UnitStatus()
+        status.name = name
+        status.turnsLeft = turns
+        status.setTransients(this)
+        statuses.add(status)
+        updateUniques()
+
+        for (unique in getTriggeredUniques(UniqueType.TriggerUponStatusGain){ it.params[0] == name })
+            UniqueTriggerActivation.triggerUnique(unique, this)
+    }
+    
+    fun removeStatus(name:String){
+        val wereRemoved = statuses.removeAll { it.name == name }
+        if (!wereRemoved) return
+        
+        updateUniques()
+
+        for (unique in getTriggeredUniques(UniqueType.TriggerUponStatusLoss){ it.params[0] == name })
+            UniqueTriggerActivation.triggerUnique(unique, this)
     }
 
 

@@ -85,6 +85,7 @@ object CivilianUnitAutomation {
 
             val hurriedPolicy = UnitActions.invokeUnitAction(unit, UnitActionType.HurryPolicy)
             if (hurriedPolicy) return
+            //TODO: save up great scientists/writers for late game (8 turns after research labs/broadcast towers resp.)
         }
 
         // Great merchant -> Conduct trade mission if late game and if not at war.
@@ -102,10 +103,9 @@ object CivilianUnitAutomation {
                 return
         }
 
-        // Great engineer -> Try to speed up wonder construction if late game
-        if (isLateGame &&
-            (unit.hasUnique(UniqueType.CanSpeedupConstruction)
-                || unit.hasUnique(UniqueType.CanSpeedupWonderConstruction))) {
+        // Great engineer -> Try to speed up wonder construction
+        if (unit.hasUnique(UniqueType.CanSpeedupConstruction)
+                || unit.hasUnique(UniqueType.CanSpeedupWonderConstruction)) {
             val wonderCanBeSpedUpEventually = SpecificUnitAutomation.speedupWonderConstruction(unit)
             if (wonderCanBeSpedUpEventually)
                 return
@@ -139,6 +139,14 @@ object CivilianUnitAutomation {
         //  ages?
 
         if (SpecificUnitAutomation.automateImprovementPlacer(unit)) return
+        
+        val goldenAgeAction = UnitActions.getUnitActions(unit, UnitActionType.TriggerUnique)
+            .filter { it.action != null && it.associatedUnique?.type in listOf(UniqueType.OneTimeEnterGoldenAge,
+                UniqueType.OneTimeEnterGoldenAgeTurns) }.firstOrNull()
+        if (goldenAgeAction != null) {
+            goldenAgeAction.action?.invoke()
+            return
+        }
 
         return // The AI doesn't know how to handle unknown civilian units
     }
@@ -146,7 +154,7 @@ object CivilianUnitAutomation {
     private fun isLateGame(civ: Civilization): Boolean {
         val researchCompletePercent =
             (civ.tech.researchedTechnologies.size * 1.0f) / civ.gameInfo.ruleset.technologies.size
-        return researchCompletePercent >= 0.8f
+        return researchCompletePercent >= 0.6f
     }
 
     /** Returns whether the civilian spends its turn hiding and not moving */

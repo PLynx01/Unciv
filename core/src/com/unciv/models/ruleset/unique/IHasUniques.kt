@@ -7,6 +7,7 @@ import com.unciv.models.ruleset.tech.Era
 import com.unciv.models.ruleset.tech.TechColumn
 import com.unciv.models.ruleset.tech.Technology
 import com.unciv.models.stats.INamed
+import com.unciv.ui.components.extensions.toPercent
 
 /**
  * Common interface for all 'ruleset objects' that have Uniques, like BaseUnit, Nation, etc.
@@ -17,7 +18,7 @@ interface IHasUniques : INamed {
     // Every implementation should override these with the same `by lazy (::thingsProvider)`
     // AND every implementation should annotate these with `@delegate:Transient`
     val uniqueObjects: List<Unique>
-    val uniqueMap: Map<String, List<Unique>>
+    val uniqueMap: UniqueMap
 
     fun uniqueObjectsProvider(): List<Unique> {
         if (uniques.isEmpty()) return emptyList()
@@ -35,24 +36,15 @@ interface IHasUniques : INamed {
      * */
     fun getUniqueTarget(): UniqueTarget
 
-    fun getMatchingUniques(uniqueTemplate: String, stateForConditionals: StateForConditionals? = null): Sequence<Unique> {
-        val matchingUniques = uniqueMap[uniqueTemplate]
-            ?: return emptySequence()
+    fun getMatchingUniques(uniqueType: UniqueType, state: StateForConditionals = StateForConditionals.EmptyState) =
+        uniqueMap.getMatchingUniques(uniqueType, state)
+    
+    fun hasUnique(uniqueType: UniqueType, state: StateForConditionals? = null) =
+        uniqueMap.hasMatchingUnique(uniqueType, state ?: StateForConditionals.EmptyState)
 
-        val actualStateForConditionals = stateForConditionals ?: StateForConditionals()
-        val uniques = matchingUniques.asSequence().filter { it.conditionalsApply(actualStateForConditionals) }
-        return uniques.flatMap { it.getMultiplied(actualStateForConditionals) }
-    }
-
-    fun getMatchingUniques(uniqueType: UniqueType, stateForConditionals: StateForConditionals? = null) =
-        getMatchingUniques(uniqueType.placeholderText, stateForConditionals)
-
-    fun hasUnique(uniqueTemplate: String, stateForConditionals: StateForConditionals? = null) =
-        getMatchingUniques(uniqueTemplate, stateForConditionals).any()
-
-    fun hasUnique(uniqueType: UniqueType, stateForConditionals: StateForConditionals? = null) =
-        getMatchingUniques(uniqueType.placeholderText, stateForConditionals).any()
-
+    fun hasTagUnique(tagUnique: String) =
+        uniqueMap.hasTagUnique(tagUnique)
+    
     fun availabilityUniques(): Sequence<Unique> = getMatchingUniques(UniqueType.OnlyAvailable, StateForConditionals.IgnoreConditionals) + getMatchingUniques(UniqueType.CanOnlyBeBuiltWhen, StateForConditionals.IgnoreConditionals)
 
     fun techsRequiredByUniques(): Sequence<String> {
@@ -88,6 +80,13 @@ interface IHasUniques : INamed {
         // Currently this is only used in CityStateFunctions.kt.
         return eraAvailable.eraNumber <= ruleset.eras[requestedEra]!!.eraNumber
     }
+    
+    fun getWeightForAiDecision(stateForConditionals: StateForConditionals): Float {
+        var weight = 1f
+        for (unique in getMatchingUniques(UniqueType.AiChoiceWeight, stateForConditionals))
+            weight *= unique.params[0].toPercent()
+        return weight
+    }
 
     /**
      *  Is this ruleset object unavailable as determined by settings chosen at game start?
@@ -96,10 +95,39 @@ interface IHasUniques : INamed {
      *  - Default implementation checks disabling by Religion, Espionage or Victory types.
      *  - Overrides need to deal with e.g. Era-specific wonder disabling, no-nukes, ruin rewards by difficulty, and so on!
      */
-    fun isHiddenBySettings(gameInfo: GameInfo): Boolean {
+    fun isUnavailableBySettings(gameInfo: GameInfo): Boolean {
+        val gameBasedConditionals = setOf(
+            UniqueType.ConditionalVictoryDisabled,
+            UniqueType.ConditionalVictoryEnabled,
+            UniqueType.ConditionalSpeed,
+            UniqueType.ConditionalDifficulty,
+            UniqueType.ConditionalReligionEnabled,
+            UniqueType.ConditionalReligionDisabled,
+            UniqueType.ConditionalEspionageEnabled,
+            UniqueType.ConditionalEspionageDisabled,
+        )
+        val stateForConditionals = StateForConditionals(gameInfo = gameInfo)
+
+        if (getMatchingUniques(UniqueType.Unavailable, StateForConditionals.IgnoreConditionals)
+                .any { unique ->
+                    unique.modifiers.any {
+                        it.type in gameBasedConditionals
+                                && Conditionals.conditionalApplies(null, it, stateForConditionals) } })
+            return true
+        
+        if (getMatchingUniques(UniqueType.OnlyAvailable, StateForConditionals.IgnoreConditionals)
+                .any { unique ->
+                    unique.modifiers.any {
+                        it.type in gameBasedConditionals
+                                && !Conditionals.conditionalApplies(null, it, stateForConditionals) } })
+            return true
+        
         if (!gameInfo.isReligionEnabled() && hasUnique(UniqueType.HiddenWithoutReligion)) return true
         if (!gameInfo.isEspionageEnabled() && hasUnique(UniqueType.HiddenWithoutEspionage)) return true
-        if (getMatchingUniques(UniqueType.HiddenWithoutVictoryType).any { it.params[0] !in gameInfo.gameParameters.victoryTypes }) return true
+        
+        
+        if (getMatchingUniques(UniqueType.HiddenWithoutVictoryType)
+            .any { it.params[0] !in gameInfo.gameParameters.victoryTypes }) return true
         return false
     }
 
@@ -107,7 +135,7 @@ interface IHasUniques : INamed {
      *  Is this ruleset object hidden from Civilopedia?
      *
      *  - Obviously, the [UniqueType.HiddenFromCivilopedia] test is done here (and nowhere else - exception TranslationFileWriter for Tutorials).
-     *  - Includes the [isHiddenBySettings] test if [gameInfo] is known, otherwise existence of Religion is guessed from [ruleset], and all victory types are assumed enabled.
+     *  - Includes the [isUnavailableBySettings] test if [gameInfo] is known, otherwise existence of Religion is guessed from [ruleset], and all victory types are assumed enabled.
      *  - Note: RulesetObject-type specific overrides should not be necessary unless (TODO) we implement support for conditionals on the 'Hidden*' Uniques.
      *  @param gameInfo Defaults to [UncivGame.getGameInfoOrNull]. Civilopedia must also be able to run from MainMenu without a game loaded. In that case only this parameter can be `null`. So if you know it - provide!
      *  @param ruleset required if [gameInfo] is null, otherwise optional.
@@ -118,7 +146,7 @@ interface IHasUniques : INamed {
         ruleset: Ruleset? = null
     ): Boolean {
         if (hasUnique(UniqueType.HiddenFromCivilopedia)) return true
-        if (gameInfo != null && isHiddenBySettings(gameInfo)) return true
+        if (gameInfo != null && isUnavailableBySettings(gameInfo)) return true
         if (gameInfo == null && hasUnique(UniqueType.HiddenWithoutReligion) && ruleset!!.beliefs.isEmpty()) return true
         return false
     }

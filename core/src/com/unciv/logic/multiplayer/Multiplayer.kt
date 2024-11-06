@@ -102,6 +102,9 @@ class Multiplayer {
 
             for (game in multiplayerFiles.savedGames.values) {
                 if (game in doNotUpdate) continue
+                // Any games that haven't been updated in 2 weeks (!) are inactive, don't waste your time
+                if (Duration.between(Instant.ofEpochMilli(game.fileHandle.lastModified()), Instant.now())
+                    .isLargerThan(Duration.ofDays(14))) continue
                 launchOnThreadPool {
                     game.requestUpdate(forceUpdate)
                 }
@@ -151,8 +154,12 @@ class Multiplayer {
         val preview = game.preview ?: throw game.error!!
         // download to work with the latest game state
         val gameInfo = multiplayerServer.tryDownloadGame(preview.gameId)
-        if (gameInfo.currentTurnStartTime != preview.currentTurnStartTime)
-            return false // Game was updated since we tried
+
+
+        if (gameInfo.currentPlayer != preview.currentPlayer) {
+            game.doManualUpdate(gameInfo.asPreview())
+            return false
+        }
 
         val playerCiv = gameInfo.getCurrentPlayerCivilization()
 
@@ -177,13 +184,23 @@ class Multiplayer {
         return true
     }
 
-    /** Returns false if game was not up to date */
-    suspend fun skipCurrentPlayerTurn(game: MultiplayerGame): Boolean {
-        val preview = game.preview ?: throw game.error!!
+    /** Returns false if game was not up to date
+     * Returned value indicates an error string - will be null if successful  */
+    suspend fun skipCurrentPlayerTurn(game: MultiplayerGame): String? {
+        val preview = game.preview ?: return game.error!!.message
         // download to work with the latest game state
-        val gameInfo = multiplayerServer.tryDownloadGame(preview.gameId)
-        if (gameInfo.currentTurnStartTime != preview.currentTurnStartTime)
-            return false // Game was updated since we tried
+        val gameInfo: GameInfo
+        try {
+            gameInfo = multiplayerServer.tryDownloadGame(preview.gameId)
+        }
+        catch (ex: Exception){
+            return ex.message
+        }
+        
+        if (gameInfo.currentPlayer != preview.currentPlayer) {
+            game.doManualUpdate(gameInfo.asPreview())
+            return "Could not pass turn - current player has been updated!"
+        }
 
         val playerCiv = gameInfo.getCurrentPlayerCivilization()
         NextTurnAutomation.automateCivMoves(playerCiv, false)
@@ -193,7 +210,7 @@ class Multiplayer {
         multiplayerFiles.files.saveGame(newPreview, game.fileHandle)
         multiplayerServer.tryUploadGame(gameInfo, withPreview = true)
         game.doManualUpdate(newPreview)
-        return true
+        return null
     }
 
     /**

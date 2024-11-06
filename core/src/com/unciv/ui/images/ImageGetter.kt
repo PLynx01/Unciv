@@ -22,6 +22,7 @@ import com.unciv.json.json
 import com.unciv.models.ruleset.PerpetualConstruction
 import com.unciv.models.ruleset.Ruleset
 import com.unciv.models.ruleset.nation.Nation
+import com.unciv.models.ruleset.unit.BaseUnit
 import com.unciv.models.skins.SkinCache
 import com.unciv.models.tilesets.TileSetCache
 import com.unciv.ui.components.extensions.center
@@ -212,13 +213,10 @@ object ImageGetter {
     fun getExternalImage(fileName: String) =
         getExternalImage(Gdx.files.internal("ExtraImages/$fileName"))
 
-    fun getImage(fileName: String?): Image {
-        return ImageWithCustomSize(getDrawable(fileName))
-    }
+    fun getImage(fileName: String?): Image = ImageWithCustomSize(getDrawable(fileName))
 
-    fun getDrawable(fileName: String?): TextureRegionDrawable {
-        return textureRegionDrawables[fileName] ?: textureRegionDrawables[whiteDotLocation]!!
-    }
+    fun getDrawable(fileName: String?): TextureRegionDrawable =
+        textureRegionDrawables[fileName] ?: textureRegionDrawables[whiteDotLocation]!!
 
     fun getDrawableOrNull(fileName: String?): TextureRegionDrawable? {
         if (fileName == null)
@@ -239,30 +237,23 @@ object ImageGetter {
     }
 
     fun imageExists(fileName: String) = textureRegionDrawables.containsKey(fileName)
-    fun techIconExists(techName: String) = imageExists("TechIcons/$techName")
-    fun unitIconExists(unitName: String) = imageExists("UnitIcons/$unitName")
     fun ninePatchImageExists(fileName: String) = ninePatchDrawables.containsKey(fileName)
 
-    fun getStatIcon(statName: String): Image {
-        return getImage("StatIcons/$statName")
-                .apply { setSize(20f, 20f) }
-    }
+    fun getStatIcon(statName: String): Image = getImage("StatIcons/$statName")
+            .apply { setSize(20f, 20f) }
 
     fun wonderImageExists(wonderName: String) = imageExists("WonderImages/$wonderName")
     fun getWonderImage(wonderName: String) = getImage("WonderImages/$wonderName")
 
     fun getNationIcon(nation: String) = getImage("NationIcons/$nation")
-    fun getNationPortrait(nation: Nation, size: Float): Portrait {
-        return PortraitNation(nation.name, size)
-    }
+    fun getNationPortrait(nation: Nation, size: Float): Portrait = PortraitNation(nation.name, size)
 
-    fun getRandomNationPortrait(size: Float): Portrait {
-        return PortraitNation(Constants.random, size)
-    }
+    fun getRandomNationPortrait(size: Float): Portrait = PortraitNation(Constants.random, size)
 
-    fun getUnitIcon(unitName: String, color: Color = Color.BLACK): Image {
-        return getImage("UnitIcons/$unitName").apply { this.color = color }
-    }
+    fun getUnitIcon(unit: BaseUnit, color: Color = Color.BLACK): Image =
+        if (imageExists("UnitIcons/${unit.name}"))
+            getImage("UnitIcons/${unit.name}").apply { this.color = color }
+        else getImage("UnitTypeIcons/${unit.type}").apply { this.color = color }
 
     fun getConstructionPortrait(construction: String, size: Float): Group {
         if (ruleset.buildings.containsKey(construction)) {
@@ -276,29 +267,19 @@ object ImageGetter {
         return getStatIcon(construction).surroundWithCircle(size).surroundWithThinCircle()
     }
 
-    fun getUniquePortrait(uniqueName: String, size: Float): Group {
-        return PortraitUnique(uniqueName, size)
-    }
+    fun getUniquePortrait(uniqueName: String, size: Float): Group = PortraitUnique(uniqueName, size)
 
-    fun getPromotionPortrait(promotionName: String, size: Float = 30f): Group {
-        return PortraitPromotion(promotionName, size)
-    }
+    fun getPromotionPortrait(promotionName: String, size: Float = 30f): Group = PortraitPromotion(promotionName, size)
 
-    fun getResourcePortrait(resourceName: String, size: Float, amount: Int = 0): Group {
-        return PortraitResource(resourceName, size, amount)
-    }
+    fun getResourcePortrait(resourceName: String, size: Float, amount: Int = 0): Group =
+        PortraitResource(resourceName, size, amount)
 
-    fun getTechIconPortrait(techName: String, circleSize: Float): Group {
-        return PortraitTech(techName, circleSize)
-    }
+    fun getTechIconPortrait(techName: String, circleSize: Float): Group = PortraitTech(techName, circleSize)
 
-    fun getImprovementPortrait(improvementName: String, size: Float = 20f, dim: Boolean = false, isPillaged: Boolean = false): Portrait {
-        return PortraitImprovement(improvementName, size, dim, isPillaged)
-    }
+    fun getImprovementPortrait(improvementName: String, size: Float = 20f, dim: Boolean = false, isPillaged: Boolean = false): Portrait =
+        PortraitImprovement(improvementName, size, dim, isPillaged)
 
-    fun getUnitActionPortrait(actionName: String, size: Float = 20f): Portrait {
-        return PortraitUnitAction(actionName, size)
-    }
+    fun getUnitActionPortrait(actionName: String, size: Float = 20f): Portrait = PortraitUnitAction(actionName, size)
 
     fun getReligionIcon(iconName: String): Image { return getImage("ReligionIcons/$iconName") }
     fun getReligionPortrait(iconName: String, size: Float): Portrait {
@@ -487,6 +468,8 @@ object ImageGetter {
         specialist.color = color
         return specialist
     }
+    
+    fun getAllImageNames() = textureRegionDrawables.keys
 
     fun getAvailableSkins() = ninePatchDrawables.keys.asSequence().map { it.split("/")[1] }.distinct()
 

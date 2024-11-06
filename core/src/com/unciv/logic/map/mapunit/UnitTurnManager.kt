@@ -21,13 +21,15 @@ class UnitTurnManager(val unit: MapUnit) {
         ) {
             val tile = unit.getTile()
             if (tile.doWorkerTurn(unit))
-                tile.getCity()?.updateCitizens = true
+                tile.getCity()?.shouldReassignPopulation = true
         }
 
-        if (!unit.hasUnitMovedThisTurn() && unit.isFortified() && unit.turnsFortified < 2) {
+        if (!unit.hasUnitMovedThisTurn()
+            && (unit.isFortified() || (unit.isGuarding() && unit.canFortify()))
+            && unit.turnsFortified < 2) {
             unit.turnsFortified++
         }
-        if (!unit.isFortified())
+        if (!unit.isFortified() && !unit.isGuarding())
             unit.turnsFortified = 0
 
         if (!unit.hasUnitMovedThisTurn() || unit.hasUnique(UniqueType.HealsEvenAfterAction))
@@ -64,10 +66,9 @@ class UnitTurnManager(val unit: MapUnit) {
 
         unit.addMovementMemory()
 
-        for (unique in unit.getTriggeredUniques(UniqueType.TriggerUponEndingTurnInTile))
-            if (unique.getModifiers(UniqueType.TriggerUponEndingTurnInTile).any {
-                            unit.getTile().matchesFilter(it.params[0], unit.civ) })
-                UniqueTriggerActivation.triggerUnique(unique, unit)
+        for (unique in unit.getTriggeredUniques(UniqueType.TriggerUponEndingTurnInTile)
+                { unit.getTile().matchesFilter(it.params[0], unit.civ) })
+            UniqueTriggerActivation.triggerUnique(unique, unit)
     }
 
 
@@ -166,5 +167,11 @@ class UnitTurnManager(val unit: MapUnit) {
 
         unit.addMovementMemory()
         unit.attacksSinceTurnStart.clear()
+        
+        for (status in unit.statuses.toList()){
+            status.turnsLeft--
+            if (status.turnsLeft <= 0) unit.removeStatus(status.name)
+        }
+        unit.updateUniques()
     }
 }

@@ -226,7 +226,7 @@ object BattleDamage {
                 modifiers["Tile"] = (tileDefenceBonus * 100).toInt()
 
 
-            if (defender.unit.isFortified())
+            if (defender.unit.isFortified() || defender.unit.isGuarding())
                 modifiers["Fortification"] = BattleConstants.FORTIFICATION_BONUS * defender.unit.getFortificationTurns()
         }
 
@@ -242,7 +242,6 @@ object BattleDamage {
 
     private fun getHealthDependantDamageRatio(combatant: ICombatant): Float {
         return if (combatant !is MapUnitCombatant
-            || combatant.unit.hasUnique(UniqueType.NoDamagePenalty, checkCivInfoUniques = true)
             || combatant.unit.hasUnique(UniqueType.NoDamagePenaltyWoundedUnits, checkCivInfoUniques = true)
         ) 1f
         // Each 3 points of health reduces damage dealt by 1%

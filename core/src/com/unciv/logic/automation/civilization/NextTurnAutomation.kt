@@ -4,6 +4,7 @@ import com.unciv.logic.automation.Automation
 import com.unciv.logic.automation.ThreatLevel
 import com.unciv.logic.automation.unit.EspionageAutomation
 import com.unciv.logic.automation.unit.UnitAutomation
+import com.unciv.logic.battle.*
 import com.unciv.logic.city.City
 import com.unciv.logic.civilization.AlertType
 import com.unciv.logic.civilization.Civilization
@@ -15,6 +16,7 @@ import com.unciv.logic.civilization.diplomacy.DiplomaticModifiers
 import com.unciv.logic.civilization.diplomacy.DiplomaticStatus
 import com.unciv.logic.civilization.diplomacy.RelationshipLevel
 import com.unciv.logic.map.mapunit.MapUnit
+import com.unciv.logic.map.tile.Tile
 import com.unciv.models.ruleset.MilestoneType
 import com.unciv.models.ruleset.Policy
 import com.unciv.models.ruleset.PolicyBranch
@@ -27,6 +29,7 @@ import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.models.ruleset.unit.BaseUnit
 import com.unciv.models.stats.Stat
 import com.unciv.ui.screens.victoryscreen.RankingType
+import com.unciv.utils.randomWeighted
 import kotlin.random.Random
 
 object NextTurnAutomation {
@@ -51,10 +54,12 @@ object NextTurnAutomation {
             if (civInfo.gameInfo.isReligionEnabled()) {
                 ReligionAutomation.spendFaithOnReligion(civInfo)
             }
+            
             DiplomacyAutomation.offerOpenBorders(civInfo)
             DiplomacyAutomation.offerResearchAgreement(civInfo)
             DiplomacyAutomation.offerDefensivePact(civInfo)
             TradeAutomation.exchangeLuxuries(civInfo)
+            
             issueRequests(civInfo)
             adoptPolicy(civInfo)  // todo can take a second - why?
             freeUpSpaceResources(civInfo)
@@ -256,12 +261,15 @@ object NextTurnAutomation {
                 .groupBy { it.cost }
             return researchableTechs.toSortedMap().values.toList()
         }
+
+        val stateForConditionals = StateForConditionals(civInfo)
         while(civInfo.tech.freeTechs > 0) {
             val costs = getGroupedResearchableTechs()
             if (costs.isEmpty()) return
 
             val mostExpensiveTechs = costs[costs.size - 1]
-            civInfo.tech.getFreeTechnology(mostExpensiveTechs.random().name)
+            val chosenTech = mostExpensiveTechs.randomWeighted { it.getWeightForAiDecision(stateForConditionals) }
+            civInfo.tech.getFreeTechnology(chosenTech.name)
         }
         if (civInfo.tech.techsToResearch.isEmpty()) {
             val costs = getGroupedResearchableTechs()
@@ -271,11 +279,11 @@ object NextTurnAutomation {
             //Do not consider advanced techs if only one tech left in cheapest group
             val techToResearch: Technology =
                 if (cheapestTechs.size == 1 || costs.size == 1) {
-                    cheapestTechs.random()
+                    cheapestTechs.randomWeighted { it.getWeightForAiDecision(stateForConditionals) }
                 } else {
                     //Choose randomly between cheapest and second cheapest group
                     val techsAdvanced = costs[1]
-                    (cheapestTechs + techsAdvanced).random()
+                    (cheapestTechs + techsAdvanced).randomWeighted { it.getWeightForAiDecision(stateForConditionals) }
                 }
 
             civInfo.tech.techsToResearch.add(techToResearch.name)
@@ -342,7 +350,8 @@ object NextTurnAutomation {
 
             val policyToAdopt: Policy =
                 if (civInfo.policies.isAdoptable(targetBranch)) targetBranch
-                else targetBranch.policies.filter { civInfo.policies.isAdoptable(it) }.random()
+                else targetBranch.policies.filter { civInfo.policies.isAdoptable(it) }
+                    .randomWeighted { it.getWeightForAiDecision(StateForConditionals(civInfo)) }
 
             civInfo.policies.adopt(policyToAdopt)
         }
@@ -358,17 +367,9 @@ object NextTurnAutomation {
 
         if (greatPeople.isEmpty()) return
         var greatPerson = greatPeople.random()
-
-        if (civInfo.wantsToFocusOn(Victory.Focus.Culture)) {
-            val culturalGP =
-                greatPeople.firstOrNull { it.uniques.contains("Great Person - [Culture]") }
-            if (culturalGP != null) greatPerson = culturalGP
-        }
-        if (civInfo.wantsToFocusOn(Victory.Focus.Science)) {
-            val scientificGP =
-                greatPeople.firstOrNull { it.uniques.contains("Great Person - [Science]") }
-            if (scientificGP != null) greatPerson = scientificGP
-        }
+        val scienceGP = greatPeople.firstOrNull { it.uniques.contains("Great Person - [Science]") }
+        if (scienceGP != null)  greatPerson = scienceGP
+        // Humans would pick a prophet or engineer, but it'd require more sophistication on part of the AI - a scientist is the safest option for now
 
         civInfo.units.addUnit(greatPerson, civInfo.cities.firstOrNull { it.isCapital() })
 
@@ -417,7 +418,59 @@ object NextTurnAutomation {
     private fun automateUnits(civInfo: Civilization) {
         val isAtWar = civInfo.isAtWar()
         val sortedUnits = civInfo.units.getCivUnits().sortedBy { unit -> getUnitPriority(unit, isAtWar) }
+        
+        val citiesRequiringManualPlacement = civInfo.getKnownCivs().filter { it.isAtWarWith(civInfo) }
+            .flatMap { it.cities }
+            .filter { it.getCenterTile().getTilesInDistance(4).count { it.militaryUnit?.civ == civInfo } > 4 }
+            .toList()
+        
+        for (city in citiesRequiringManualPlacement) automateCityConquer(civInfo, city)
+        
         for (unit in sortedUnits) UnitAutomation.automateUnitMoves(unit)
+    }
+    
+    /** All units will continue after this to the regular automation, so units not moved in this function will still move */
+    fun automateCityConquer(civInfo: Civilization, city: City){
+        fun ourUnitsInRange(range: Int) = city.getCenterTile().getTilesInDistance(range)
+            .mapNotNull { it.militaryUnit }.filter { it.civ == civInfo }.toList()
+        
+        
+        fun attackIfPossible(unit: MapUnit, tile: Tile){
+            val attackableTile = TargetHelper.getAttackableEnemies(unit,
+                unit.movement.getDistanceToTiles(), listOf(tile)).firstOrNull()
+            if (attackableTile != null)
+                Battle.moveAndAttack(MapUnitCombatant(unit), attackableTile)
+        }
+        
+        // Air units should do their thing before any of this
+        for (unit in ourUnitsInRange(7).filter { it.baseUnit.isAirUnit() })
+            UnitAutomation.automateUnitMoves(unit)
+        
+        // First off, any siege unit that can attack the city, should
+        val seigeUnits = ourUnitsInRange(4).filter { it.baseUnit.isProbablySiegeUnit() }
+        for (unit in seigeUnits) {
+            if (!unit.hasUnique(UniqueType.MustSetUp) || unit.isSetUpForSiege())
+                attackIfPossible(unit, city.getCenterTile())
+        }
+        
+        // Melee units should focus on getting rid of enemy units that threaten the siege units
+        // If there are no units, this means attacking the city
+        val meleeUnits = ourUnitsInRange(5).filter { it.baseUnit.isMelee() }
+        for (unit in meleeUnits.sortedByDescending { it.baseUnit.getForceEvaluation() }) {
+            // We're so close, full speed ahead!
+            if (city.health < city.getMaxHealth() / 5) attackIfPossible(unit, city.getCenterTile())
+            
+            val tilesToTarget = city.getCenterTile().getTilesInDistance(4).toList()
+            
+            val attackableEnemies = TargetHelper.getAttackableEnemies(unit,
+                unit.movement.getDistanceToTiles(), tilesToTarget)
+            if (attackableEnemies.isEmpty()) continue
+            val enemyWeWillDamageMost = attackableEnemies.maxBy { 
+                BattleDamage.calculateDamageToDefender(MapUnitCombatant(unit), it.combatant!!, it.tileToAttackFrom, 0.5f)
+            }
+            
+            Battle.moveAndAttack(MapUnitCombatant(unit), enemyWeWillDamageMost)
+        }
     }
 
     /** Returns the priority of the unit, a lower value is higher priority **/
@@ -475,9 +528,6 @@ object NextTurnAutomation {
         if (civInfo.isCityState) return
         if (civInfo.isOneCityChallenger()) return
         if (civInfo.isAtWar()) return // don't train settlers when you could be training troops.
-        if (civInfo.wantsToFocusOn(Victory.Focus.Culture) && civInfo.cities.size > 3 &&
-            civInfo.getPersonality().isNeutralPersonality)
-            return
         if (civInfo.cities.none()) return
         if (civInfo.getHappiness() <= civInfo.cities.size) return
 
@@ -597,13 +647,16 @@ object NextTurnAutomation {
     fun getClosestCities(civ1: Civilization, civ2: Civilization): CityDistance? {
         if (civ1.cities.isEmpty() || civ2.cities.isEmpty())
             return null
+        
+        var minDistance: CityDistance? = null
 
-        val cityDistances = arrayListOf<CityDistance>()
         for (civ1city in civ1.cities)
-            for (civ2city in civ2.cities)
-                cityDistances += CityDistance(civ1city, civ2city,
-                        civ1city.getCenterTile().aerialDistanceTo(civ2city.getCenterTile()))
+            for (civ2city in civ2.cities){
+                val currentDistance = civ1city.getCenterTile().aerialDistanceTo(civ2city.getCenterTile())
+                if (minDistance == null || currentDistance < minDistance.aerialDistance)
+                    minDistance = CityDistance(civ1city, civ2city, currentDistance)
+                }
 
-        return cityDistances.minByOrNull { it.aerialDistance }!!
+        return minDistance
     }
 }

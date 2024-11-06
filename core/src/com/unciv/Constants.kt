@@ -42,11 +42,15 @@ object Constants {
 
     const val barbarianEncampment = "Barbarian encampment"
     const val cityCenter = "City center"
-
+    
+    // Treaties
     const val peaceTreaty = "Peace Treaty"
     const val researchAgreement = "Research Agreement"
-    const val openBorders = "Open Borders"
     const val defensivePact = "Defensive Pact"
+    
+    // Agreements
+    const val openBorders = "Open Borders"
+    
     /** Used as origin in StatMap or ResourceSupplyList, or the toggle button in DiplomacyOverviewTab */
     const val cityStates = "City-States"
     /** Used as origin in ResourceSupplyList */
@@ -68,6 +72,8 @@ object Constants {
 
     const val cancelImprovementOrder = "Cancel improvement order"
     const val tutorialPopupNamePrefix = "Tutorial: "
+    const val thisUnit = "This Unit"
+    const val targetUnit = "Target Unit"
 
     const val OK = "OK"
     const val close = "Close"
@@ -87,6 +93,8 @@ object Constants {
     const val repair = "Repair"
 
     const val uniqueOrDelimiter = "\" OR \""
+    const val stringSplitCharacter = '␟' // U+241 - Unit separator character. Used to join texts and split them with a char that is virtually guaranteed to not be used in normal text. 
+
 
     const val simulationCiv1 = "SimulationCiv1"
     const val simulationCiv2 = "SimulationCiv2"
@@ -101,7 +109,7 @@ object Constants {
     const val defaultSkin = "Minimal"
 
     /**
-     * Use this to determine whether a [MapUnit][com.unciv.logic.map.MapUnit]'s movement is exhausted
+     * Use this to determine whether a [MapUnit][com.unciv.logic.map.mapunit.MapUnit]'s movement is exhausted
      * (currentMovement <= this) if and only if a fuzzy comparison is needed to account for Float rounding errors.
      * _Most_ checks do compare to 0!
      */

@@ -22,6 +22,7 @@ import com.unciv.logic.map.mapgenerator.NaturalWonderGenerator
 import com.unciv.logic.map.mapgenerator.RiverGenerator
 import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.logic.map.tile.Tile
+import com.unciv.logic.map.tile.TileNormalizer
 import com.unciv.models.UpgradeUnitAction
 import com.unciv.models.ruleset.BeliefType
 import com.unciv.models.ruleset.Event
@@ -30,10 +31,10 @@ import com.unciv.models.stats.Stat
 import com.unciv.models.stats.Stats
 import com.unciv.models.translations.fillPlaceholders
 import com.unciv.models.translations.hasPlaceholderParameters
-import com.unciv.ui.components.extensions.addToMapOfSets
-import com.unciv.logic.map.tile.TileNormalizer
 import com.unciv.models.translations.tr
 import com.unciv.ui.screens.worldscreen.unit.actions.UnitActionsUpgrade
+import com.unciv.utils.addToMapOfSets
+import com.unciv.utils.randomWeighted
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -119,10 +120,16 @@ object UniqueTriggerActivation {
                 val choices = event.getMatchingChoices(stateForConditionals)
                     ?: return null
                 if (civInfo.isAI() || event.presentation == Event.Presentation.None) return {
-                    choices.randomOrNull()?.triggerChoice(civInfo) ?: false
+                    val choice = choices.toList().randomWeighted { it.getWeightForAiDecision(stateForConditionals) }
+                    choice.triggerChoice(civInfo, unit)
                 }
                 if (event.presentation == Event.Presentation.Alert) return {
-                    civInfo.popupAlerts.add(PopupAlert(AlertType.Event, event.name))
+                    /** See [AlertPopup.addEvent] for the deserializing of this string to the context */
+                    var eventText = event.name
+                    // Todo later version: Uncomment this to enable events with unit triggers
+                    // if (unit != null) eventText += Constants.stringSplitCharacter + "unitId=" + unit.id
+                     
+                    civInfo.popupAlerts.add(PopupAlert(AlertType.Event, eventText))
                     true
                 }
                 // if (event.presentation == Event.Presentation.Floating) return { //todo: Park them in a Queue in GameInfo???
@@ -230,8 +237,10 @@ object UniqueTriggerActivation {
                 return { placeUnits() }
             }
             UniqueType.OneTimeFreeUnitRuins -> {
-                var civUnit = civInfo.getEquivalentUnit(unique.params[0])
-                if ( civUnit.isCityFounder() && civInfo.isOneCityChallenger()) {
+                val unitName = unique.params[0]
+                val baseUnit = ruleset.units[unitName] ?: return null
+                var civUnit = civInfo.getEquivalentUnit(baseUnit)
+                if (civUnit.isCityFounder() && civInfo.isOneCityChallenger()) {
                      val replacementUnit = ruleset.units.values
                          .firstOrNull {
                              it.getMatchingUniques(UniqueType.BuildImprovements)
@@ -928,7 +937,7 @@ object UniqueTriggerActivation {
                 if (unit == null) return null
                 if (unit.health == 100) return null
                 return {
-                    unit.healBy(unique.params[0].toInt())
+                    unit.healBy(unique.params[1].toInt())
                     if (notification != null)
                         unit.civ.addNotification(notification, MapUnitAction(unit), NotificationCategory.Units) // Do we have a heal icon?
                     true
@@ -937,7 +946,7 @@ object UniqueTriggerActivation {
             UniqueType.OneTimeUnitDamage -> {
                 if (unit == null) return null
                 return {
-                    unit.takeDamage(unique.params[0].toInt())
+                    unit.takeDamage(unique.params[1].toInt())
                     if (notification != null)
                         unit.civ.addNotification(notification, MapUnitAction(unit), NotificationCategory.Units) // Do we have a heal icon?
                     true
@@ -946,7 +955,7 @@ object UniqueTriggerActivation {
             UniqueType.OneTimeUnitGainXP -> {
                 if (unit == null) return null
                 return {
-                    unit.promotions.XP += unique.params[0].toInt()
+                    unit.promotions.XP += unique.params[1].toInt()
                     if (notification != null)
                         unit.civ.addNotification(notification, MapUnitAction(unit), NotificationCategory.Units)
                     true
@@ -956,19 +965,45 @@ object UniqueTriggerActivation {
                 if (unit == null) return null
                 return {
                     val movementToUse =
-                        if (unique.type == UniqueType.OneTimeUnitLoseMovement) unique.params[0].toFloat()
-                        else -unique.params[0].toFloat()
+                        if (unique.type == UniqueType.OneTimeUnitLoseMovement)
+                            unique.params[1].toFloat()
+                        else -unique.params[1].toFloat()
                     unit.useMovementPoints(movementToUse)
+                    true
+                }
+            }
+            UniqueType.OneTimeUnitGainStatus -> {
+                if (unit == null) return null
+                if (unique.params[1] !in unit.civ.gameInfo.ruleset.unitPromotions) return null
+                return {
+                    unit.setStatus(unique.params[1], unique.params[2].toInt())
+                    true
+                }
+            }
+            UniqueType.OneTimeUnitLoseStatus -> {
+                if (unit == null) return null
+                if (unit.statuses.none { it.name == unique.params[1] }) return null
+                return {
+                    unit.removeStatus(unique.params[1])
+                    true
+                }
+            }
+            UniqueType.OneTimeUnitDestroyed -> {
+                if (unit == null) return null
+                return {
+                    unit.destroy()
                     true
                 }
             }
             UniqueType.OneTimeUnitUpgrade, UniqueType.OneTimeUnitSpecialUpgrade -> {
                 if (unit == null) return null
                 val upgradeAction =
-                    if (unique.type == UniqueType.OneTimeUnitSpecialUpgrade) UnitActionsUpgrade.getAncientRuinsUpgradeAction(unit)
+                    if (unique.type == UniqueType.OneTimeUnitSpecialUpgrade)
+                        UnitActionsUpgrade.getAncientRuinsUpgradeAction(unit)
                     else UnitActionsUpgrade.getFreeUpgradeAction(unit)
                 if (upgradeAction.none()) return null
                 return {
+                    
                     (upgradeAction.minBy { (it as UpgradeUnitAction).unitToUpgradeTo.cost }).action!!()
                     if (notification != null)
                         unit.civ.addNotification(notification, MapUnitAction(unit), NotificationCategory.Units)
@@ -978,7 +1013,7 @@ object UniqueTriggerActivation {
             UniqueType.OneTimeUnitGainPromotion -> {
                 if (unit == null) return null
                 val promotion = unit.civ.gameInfo.ruleset.unitPromotions.keys
-                    .firstOrNull { it == unique.params[0] }
+                    .firstOrNull { it == unique.params[1] }
                     ?: return null
                 return {
                     unit.promotions.addPromotion(promotion, true)
@@ -990,7 +1025,7 @@ object UniqueTriggerActivation {
             UniqueType.OneTimeUnitRemovePromotion -> {
                 if (unit == null) return null
                 val promotion = unit.civ.gameInfo.ruleset.unitPromotions.keys
-                    .firstOrNull { it == unique.params[0]}
+                    .firstOrNull { it == unique.params[1]}
                     ?: return null
                 return {
                     unit.promotions.removePromotion(promotion)

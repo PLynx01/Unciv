@@ -17,6 +17,7 @@ import com.unciv.logic.map.tile.RoadStatus
 import com.unciv.models.ruleset.INonPerpetualConstruction
 import com.unciv.models.ruleset.tech.Era
 import com.unciv.models.ruleset.tech.Technology
+import com.unciv.models.ruleset.tile.TileResource
 import com.unciv.models.ruleset.unique.StateForConditionals
 import com.unciv.models.ruleset.unique.UniqueMap
 import com.unciv.models.ruleset.unique.UniqueTriggerActivation
@@ -24,8 +25,8 @@ import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.models.ruleset.unit.BaseUnit
 import com.unciv.models.translations.tr
 import com.unciv.ui.components.MayaCalendar
-import com.unciv.ui.components.extensions.withItem
 import com.unciv.ui.components.fonts.Fonts
+import com.unciv.utils.withItem
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
@@ -57,6 +58,8 @@ class TechManager : IsPartOfGameInfoSerialization {
     var movementSpeedOnRoads = 1f
     @Transient
     var roadsConnectAcrossRivers = false
+    @Transient
+    var allTechsAreResearched = false
 
     var freeTechs = 0
     // For calculating score
@@ -153,6 +156,12 @@ class TechManager : IsPartOfGameInfoSerialization {
 
     fun isResearched(construction: INonPerpetualConstruction): Boolean = construction.requiredTechs().all{ requiredTech -> isResearched(requiredTech) }
 
+    /** resources which need no research count as researched */
+    fun isRevealed(resource: TileResource): Boolean {
+        val revealedBy = resource.revealedBy ?: return true
+        return isResearched(revealedBy)
+    }
+    
     fun isObsolete(unit: BaseUnit): Boolean = unit.techsThatObsoleteThis().any{ obsoleteTech -> isResearched(obsoleteTech) }
 
     fun isUnresearchable(tech: Technology): Boolean {
@@ -171,8 +180,7 @@ class TechManager : IsPartOfGameInfoSerialization {
         return tech.prerequisites.all { isResearched(it) }
     }
 
-    fun allTechsAreResearched() = civInfo.gameInfo.ruleset.technologies.values
-        .all { isResearched(it.name) || !canBeResearched(it.name)}
+    fun allTechsAreResearched() = allTechsAreResearched
 
     //endregion
 
@@ -308,9 +316,8 @@ class TechManager : IsPartOfGameInfoSerialization {
             if (!unique.hasTriggerConditional() && unique.conditionalsApply(StateForConditionals(civInfo)))
                 UniqueTriggerActivation.triggerUnique(unique, civInfo, triggerNotificationText = triggerNotificationText)
 
-        for (unique in civInfo.getTriggeredUniques(UniqueType.TriggerUponResearch))
-            if (unique.getModifiers(UniqueType.TriggerUponResearch).any { newTech.matchesFilter(it.params[0]) })
-                UniqueTriggerActivation.triggerUnique(unique, civInfo, triggerNotificationText = triggerNotificationText)
+        for (unique in civInfo.getTriggeredUniques(UniqueType.TriggerUponResearch) { newTech.matchesFilter(it.params[0]) })
+            UniqueTriggerActivation.triggerUnique(unique, civInfo, triggerNotificationText = triggerNotificationText)
 
 
         val revealedResources = getRuleset().tileResources.values.filter { techName == it.revealedBy }
@@ -456,7 +463,7 @@ class TechManager : IsPartOfGameInfoSerialization {
             val eraNames = erasPassed.map { it.name }.toHashSet()
             for (unique in civInfo.getTriggeredUniques(UniqueType.TriggerUponEnteringEra))
                 for (eraName in eraNames)
-                    if (unique.modifiers.any { it.type == UniqueType.TriggerUponEnteringEra && it.params[0] == eraName })
+                    if (unique.getModifiers(UniqueType.TriggerUponEnteringEra).any { it.params[0] == eraName })
                         UniqueTriggerActivation.triggerUnique(
                             unique,
                             civInfo,
@@ -524,6 +531,8 @@ class TechManager : IsPartOfGameInfoSerialization {
         movementSpeedOnRoads = if (civInfo.hasUnique(UniqueType.RoadMovementSpeed))
             RoadStatus.Road.movementImproved else RoadStatus.Road.movement
         roadsConnectAcrossRivers = civInfo.hasUnique(UniqueType.RoadsConnectAcrossRivers)
+        allTechsAreResearched = civInfo.gameInfo.ruleset.technologies.values
+            .all { isResearched(it.name) || !canBeResearched(it.name)}
     }
 
     fun getBestRoadAvailable(): RoadStatus {

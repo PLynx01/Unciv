@@ -23,6 +23,7 @@ import com.unciv.models.tilesets.TileSetCache
 import com.unciv.models.tilesets.TileSetConfig
 import com.unciv.ui.images.AtlasPreview
 import com.unciv.ui.images.Portrait
+import com.unciv.ui.images.PortraitPromotion
 
 class RulesetValidator(val ruleset: Ruleset) {
 
@@ -81,6 +82,7 @@ class RulesetValidator(val ruleset: Ruleset) {
         addTechColumnErrorsRulesetInvariant(lines)
         addEraErrors(lines, tryFixUnknownUniques)
         addSpeedErrors(lines)
+        addPersonalityErrors(lines)
         addBeliefErrors(lines, tryFixUnknownUniques)
         addNationErrors(lines, tryFixUnknownUniques)
         addPolicyErrors(lines, tryFixUnknownUniques)
@@ -237,9 +239,9 @@ class RulesetValidator(val ruleset: Ruleset) {
         // An Event is not a IHasUniques, so not suitable as sourceObject
         for (event in ruleset.events.values) {
             for (choice in event.choices) {
-                for (unique in choice.conditionObjects + choice.triggeredUniqueObjects)
-                    lines += uniqueValidator.checkUnique(unique, tryFixUnknownUniques, null, true)
+                uniqueValidator.checkUniques(choice, lines, true, tryFixUnknownUniques)
             }
+            uniqueValidator.checkUniques(event, lines, true, tryFixUnknownUniques)
         }
     }
 
@@ -394,6 +396,16 @@ class RulesetValidator(val ruleset: Ruleset) {
                 lines.add("Empty turn increment list for game speed ${speed.name}", sourceObject = speed)
         }
     }
+    
+    private fun addPersonalityErrors(lines: RulesetErrorList) {
+        for (personality in ruleset.personalities.values) {
+            if (personality.preferredVictoryType != Constants.neutralVictoryType
+                    && personality.preferredVictoryType !in ruleset.victories) {
+                lines.add("Preferred victory type ${personality.preferredVictoryType} does not exist in ruleset",
+                    RulesetErrorSeverity.Warning, sourceObject = personality,)
+            }
+        }
+    }
 
     private fun addEraErrors(
         lines: RulesetErrorList,
@@ -512,6 +524,8 @@ class RulesetValidator(val ruleset: Ruleset) {
                 lines.add("${improvement.name} requires tech ${improvement.techRequired} which does not exist!", sourceObject = improvement)
             if (improvement.replaces != null && !ruleset.tileImprovements.containsKey(improvement.replaces))
                 lines.add("${improvement.name} replaces ${improvement.replaces} which does not exist!", sourceObject = improvement)
+            if (improvement.replaces != null && improvement.uniqueTo == null)
+                lines.add("${improvement.name} should replace ${improvement.replaces} but does not have uniqueTo assigned!")
             for (terrain in improvement.terrainsCanBeBuiltOn)
                 if (!ruleset.terrains.containsKey(terrain) && terrain != "Land" && terrain != "Water")
                     lines.add("${improvement.name} can be built on terrain $terrain which does not exist!", sourceObject = improvement)
@@ -644,7 +658,8 @@ class RulesetValidator(val ruleset: Ruleset) {
     ) {
         for (promotion in ruleset.unitPromotions.values) {
             uniqueValidator.checkUniques(promotion, lines, false, tryFixUnknownUniques)
-
+            checkContrasts(promotion.innerColorObject ?: PortraitPromotion.defaultInnerColor,
+                promotion.outerColorObject ?: PortraitPromotion.defaultOuterColor, promotion, lines)
             addPromotionErrorRulesetInvariant(promotion, lines)
         }
     }
@@ -673,10 +688,20 @@ class RulesetValidator(val ruleset: Ruleset) {
             lines.add("${nation.name} can settle cities, but has no city names!", sourceObject = nation)
         }
 
-        // https://www.w3.org/TR/WCAG20/#visual-audio-contrast-contrast
-        val constrastRatio = nation.getContrastRatio()
-        if (constrastRatio < 3) {
-            val (newInnerColor, newOuterColor) = getSuggestedColors(nation)
+        checkContrasts(nation.getInnerColor(), nation.getOuterColor(), nation, lines)
+    }
+    
+    
+
+    private fun checkContrasts(
+        innerColor: Color,
+        outerColor: Color,
+        nation: RulesetObject,
+        lines: RulesetErrorList
+    ) {
+        val constrastRatio = getContrastRatio(innerColor, outerColor)
+        if (constrastRatio < 3) { // https://www.w3.org/TR/WCAG20/#visual-audio-contrast-contrast
+            val (newInnerColor, newOuterColor) = getSuggestedColors(innerColor, outerColor)
 
             var text = "${nation.name}'s colors do not contrast enough - it is unreadable!"
             text += "\nSuggested colors: "
@@ -687,11 +712,12 @@ class RulesetValidator(val ruleset: Ruleset) {
         }
     }
 
+
     data class SuggestedColors(val innerColor: Color, val outerColor: Color)
 
-    private fun getSuggestedColors(nation: Nation): SuggestedColors {
-        val innerColorLuminance = getRelativeLuminance(nation.getInnerColor())
-        val outerColorLuminance = getRelativeLuminance(nation.getOuterColor())
+    private fun getSuggestedColors(innerColor: Color, outerColor: Color): SuggestedColors {
+        val innerColorLuminance = getRelativeLuminance(innerColor)
+        val outerColorLuminance = getRelativeLuminance(outerColor)
 
         val innerLerpColor: Color
         val outerLerpColor: Color
@@ -706,12 +732,12 @@ class RulesetValidator(val ruleset: Ruleset) {
 
 
         for (i in 1..10) {
-            val newInnerColor = nation.getInnerColor().cpy().lerp(innerLerpColor, 0.05f * i)
-            val newOuterColor = nation.getOuterColor().cpy().lerp(outerLerpColor, 0.05f * i)
+            val newInnerColor = innerColor.cpy().lerp(innerLerpColor, 0.05f * i)
+            val newOuterColor = outerColor.cpy().lerp(outerLerpColor, 0.05f * i)
 
             if (getContrastRatio(newInnerColor, newOuterColor) > 3) return SuggestedColors(newInnerColor, newOuterColor)
         }
-        throw Exception("Error getting suggested colors for nation "+nation.name)
+        throw Exception("Error getting suggested colors")
     }
 
     private fun addBuildingErrorsRulesetInvariant(
@@ -742,6 +768,9 @@ class RulesetValidator(val ruleset: Ruleset) {
                     "Building ${building.name} has greatPersonPoints for ${gpp.key}, which is not a unit in the ruleset!",
                     RulesetErrorSeverity.Warning, building
                 )
+
+        if (building.replaces != null && building.uniqueTo == null)
+            lines.add("${building.name} should replace ${building.replaces} but does not have uniqueTo assigned!")
     }
 
     private fun addTechColumnErrorsRulesetInvariant(lines: RulesetErrorList) {
@@ -808,6 +837,10 @@ class RulesetValidator(val ruleset: Ruleset) {
             if (upgradesTo == unit.name || (upgradesTo == unit.replaces))
                 lines.add("${unit.name} upgrades to itself!", sourceObject = unit)
         }
+        
+        if (unit.replaces != null && unit.uniqueTo == null)
+            lines.add("${unit.name} should replace ${unit.replaces} but does not have uniqueTo assigned!")
+        
         if (unit.isMilitary && unit.strength == 0)  // Should only match ranged units with 0 strength
             lines.add("${unit.name} is a military unit but has no assigned strength!", sourceObject = unit)
     }

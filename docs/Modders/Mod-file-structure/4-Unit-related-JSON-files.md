@@ -14,8 +14,8 @@ Each unit has the following structure:
 | unitType                  | String          | Required | The type of the unit. Must be in [UnitTypes.json](#unittypesjson)                                                                                   |
 | cost                      | Integer         | -1       | The amount of production required to build this unit. The production needed is always positive                                                      |
 | movement                  | Integer         | 0        | The amount of movement points the unit has by                                                                                                       |
-| strength                  | Integer         | 0        | The melee attack and defensive strength of the unit. If this and rangedStrength are ommited or 0, the unit will be a civilian                       |
-| rangedStrength            | Integer         | 0        | The ranged attack strength of the unit. If omitted, the unit cannot ranged attack. If used, strength must be set too.                               |
+| strength                  | Integer         | 0        | The melee attack and defensive strength of the unit. If this and rangedStrength are omitted or 0, the unit will be a civilian                       |
+| rangedStrength            | Integer         | 0        | The ranged attack and defensive strength of the unit. If omitted, the unit cannot ranged attack. If used, strength must be set too.                 |
 | religiousStrength         | Integer         | 0        | The religious attack and defensive strength of the unit                                                                                             |
 | range                     | Integer         | 2        | The range from which ranged attacks can be preformed                                                                                                |
 | interceptRange            | Integer         | 0        | Air units attacking within in this range will be intercepted                                                                                        |
@@ -53,6 +53,8 @@ Each promotion has the following structure:
 | unitTypes       | List of Strings | empty    | The unit types for which this promotion applies as specified in [UnitTypes.json](#unittypesjson)                                                                                                                                                                              |
 | uniques         | List of Strings | empty    | List of [unique abilities](../../uniques.md) this promotion grants to the units                                                                                                                                                                                               |
 | civilopediaText | List            | empty    | See [civilopediaText chapter](5-Miscellaneous-JSON-files.md#civilopedia-text)                                                                                                                                                                                                 |
+| innerColor      | List            | empty    | Color of the *icon*                                                                                                                                                                                                                                                           |
+| outerColor      | List            | empty    | Color of the *background*                                                                                                                                                                                                                                                     |
 
 ## UnitTypes.json
 

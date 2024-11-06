@@ -64,8 +64,8 @@ class Building : RulesetStatsObject(), INonPerpetualConstruction {
     fun getDescription(city: City, showAdditionalInfo: Boolean) = BuildingDescriptions.getDescription(this, city, showAdditionalInfo)
     override fun getCivilopediaTextLines(ruleset: Ruleset) = BuildingDescriptions.getCivilopediaTextLines(this, ruleset)
 
-    override fun isHiddenBySettings(gameInfo: GameInfo): Boolean {
-        if (super<INonPerpetualConstruction>.isHiddenBySettings(gameInfo)) return true
+    override fun isUnavailableBySettings(gameInfo: GameInfo): Boolean {
+        if (super<INonPerpetualConstruction>.isUnavailableBySettings(gameInfo)) return true
         if (!gameInfo.gameParameters.nuclearWeaponsEnabled && hasUnique(UniqueType.EnablesNuclearWeapons)) return true
         return isHiddenByStartingEra(gameInfo)
     }
@@ -150,8 +150,9 @@ class Building : RulesetStatsObject(), INonPerpetualConstruction {
 
 
     override fun canBePurchasedWithStat(city: City?, stat: Stat): Boolean {
-        if (stat == Stat.Gold && isAnyWonder()) return false
-        if (city == null) return super.canBePurchasedWithStat(null, stat)
+        val purchaseReason = canBePurchasedWithStatReasons(null, stat)
+        if (purchaseReason != PurchaseReason.UniqueAllowed && stat == Stat.Gold && isAnyWonder()) return false
+        if (city == null) return purchaseReason.purchasable
 
         val conditionalState = StateForConditionals(civInfo = city.civ, city = city)
         return (
@@ -247,6 +248,10 @@ class Building : RulesetStatsObject(), INonPerpetualConstruction {
 
         val rejectionReasons = getRejectionReasons(cityConstructions)
 
+        if (hasUnique(UniqueType.ShowsWhenUnbuilable, StateForConditionals(cityConstructions.city)) &&
+            rejectionReasons.none { it.isNeverVisible() })
+            return true
+
         if (rejectionReasons.any { it.type == RejectionReasonType.RequiresBuildingInSomeCities }
                 && cityConstructions.city.civ.gameInfo.gameParameters.oneCityChallenge)
             return false // You will never be able to get more cities, this building is effectively disabled
@@ -259,11 +264,12 @@ class Building : RulesetStatsObject(), INonPerpetualConstruction {
     override fun getRejectionReasons(cityConstructions: CityConstructions): Sequence<RejectionReason> = sequence {
         val cityCenter = cityConstructions.city.getCenterTile()
         val civ = cityConstructions.city.civ
+        val stateForConditionals = StateForConditionals(civ, cityConstructions.city)
 
         if (cityConstructions.isBuilt(name))
             yield(RejectionReasonType.AlreadyBuilt.toInstance())
 
-        if (isHiddenBySettings(civ.gameInfo)) {
+        if (isUnavailableBySettings(civ.gameInfo)) {
             // Repeat the starting era test isHiddenBySettings already did to change the RejectionReasonType
             if (isHiddenByStartingEra(civ.gameInfo))
                 yield(RejectionReasonType.WonderDisabledEra.toInstance())
@@ -276,7 +282,7 @@ class Building : RulesetStatsObject(), INonPerpetualConstruction {
             // EXCEPT for [UniqueType.OnlyAvailable] and [UniqueType.CanOnlyBeBuiltInCertainCities]
             // since they trigger (reject) only if conditionals ARE NOT met
             if (unique.type != UniqueType.OnlyAvailable && unique.type != UniqueType.CanOnlyBeBuiltWhen &&
-                !unique.conditionalsApply(StateForConditionals(civ, cityConstructions.city))) continue
+                !unique.conditionalsApply(stateForConditionals)) continue
 
             when (unique.type) {
                 // for buildings that are created as side effects of other things, and not directly built,
@@ -380,13 +386,19 @@ class Building : RulesetStatsObject(), INonPerpetualConstruction {
             yield(RejectionReasonType.RequiresBuildingInThisCity.toInstance("Requires a [${civ.getEquivalentBuilding(requiredBuilding!!)}] in this city"))
         }
 
-        for ((resourceName, requiredAmount) in getResourceRequirementsPerTurn(
-            StateForConditionals(cityConstructions.city.civ, cityConstructions.city))
-        ) {
+        for ((resourceName, requiredAmount) in getResourceRequirementsPerTurn(stateForConditionals)) {
             val availableAmount = cityConstructions.city.getAvailableResourceAmount(resourceName)
             if (availableAmount < requiredAmount) {
                 yield(RejectionReasonType.ConsumesResources.toInstance(resourceName.getNeedMoreAmountString(requiredAmount - availableAmount)))
             }
+        }
+        
+        for (unique in getMatchingUniques(UniqueType.CostsResources, stateForConditionals)) {
+            val amount = unique.params[0].toInt()
+            val resourceName = unique.params[1]
+            val availableResources = cityConstructions.city.getAvailableResourceAmount(resourceName)
+            if (availableResources < amount)
+                yield(RejectionReasonType.ConsumesResources.toInstance(resourceName.getNeedMoreAmountString(amount - availableResources)))
         }
 
         if (requiredNearbyImprovedResources != null) {
@@ -491,10 +503,16 @@ class Building : RulesetStatsObject(), INonPerpetualConstruction {
         }
     }
 
-    fun isStatRelated(stat: Stat): Boolean {
-        if (get(stat) > 0) return true
-        if (getStatPercentageBonuses(null)[stat] > 0) return true
-        if (getMatchingUniques(UniqueType.Stats).any { it.stats[stat] > 0 }) return true
+    fun isStatRelated(stat: Stat, city: City? = null): Boolean {
+        if (city != null) {
+            if (getStats(city)[stat] > 0) return true
+            if (getStatPercentageBonuses(city)[stat] > 0) return true
+        }
+        else {
+            if (get(stat) > 0) return true
+            if (getMatchingUniques(UniqueType.Stats).any { it.stats[stat] > 0 }) return true
+            if (getStatPercentageBonuses(null)[stat] > 0) return true
+        }
         if (getMatchingUniques(UniqueType.StatsFromTiles).any { it.stats[stat] > 0 }) return true
         if (getMatchingUniques(UniqueType.StatsPerPopulation).any { it.stats[stat] > 0 }) return true
         if (stat == Stat.Happiness && hasUnique(UniqueType.RemoveAnnexUnhappiness)) return true
@@ -523,10 +541,11 @@ class Building : RulesetStatsObject(), INonPerpetualConstruction {
 
     fun isSellable() = !isAnyWonder() && !hasUnique(UniqueType.Unsellable)
 
-    override fun getResourceRequirementsPerTurn(stateForConditionals: StateForConditionals?): Counter<String> {
+    override fun getResourceRequirementsPerTurn(state: StateForConditionals?): Counter<String> {
         val resourceRequirements = Counter<String>()
         if (requiredResource != null) resourceRequirements[requiredResource!!] = 1
-        for (unique in getMatchingUniques(UniqueType.ConsumesResources, stateForConditionals))
+        for (unique in getMatchingUniques(UniqueType.ConsumesResources, 
+            state ?: StateForConditionals.EmptyState))
             resourceRequirements[unique.params[1]] += unique.params[0].toInt()
         return resourceRequirements
     }

@@ -124,24 +124,15 @@ object Battle {
         } else interceptDamage = DamageDealt.None
 
         // Withdraw from melee ability
-        if (attacker is MapUnitCombatant && attacker.isMelee() && defender is MapUnitCombatant) {
-            val withdrawChance =
-                if (defender.unit.hasUnique(UniqueType.WithdrawsBeforeMeleeCombat, stateForConditionals = StateForConditionals(
+        if (attacker is MapUnitCombatant && attacker.isMelee() && defender is MapUnitCombatant
+            && defender.unit.hasUnique(UniqueType.WithdrawsBeforeMeleeCombat, stateForConditionals = StateForConditionals(
                         civInfo = defender.getCivInfo(),
                         ourCombatant = defender,
                         theirCombatant = attacker,
                         tile = attackedTile
                     ))
-                ) 100
-
-                else 100 - defender.unit.getMatchingUniques(UniqueType.MayWithdraw)
-                    .fold(100) { probabilityToWithdraw, unique ->
-                        probabilityToWithdraw * (100 - unique.params[0].toInt()) / 100
-                    }
-
-            if (withdrawChance != 0 && doWithdrawFromMeleeAbility(attacker, defender, withdrawChance))
-                return DamageDealt.None
-        }
+            && doWithdrawFromMeleeAbility(attacker, defender)) return DamageDealt.None
+        
 
         val isAlreadyDefeatedCity = defender is CityCombatant && defender.isDefeated()
 
@@ -178,11 +169,25 @@ object Battle {
         fun triggerVictoryUniques(ourUnit: MapUnitCombatant, enemy: MapUnitCombatant) {
             val stateForConditionals = StateForConditionals(civInfo = ourUnit.getCivInfo(),
                 ourCombatant = ourUnit, theirCombatant = enemy, tile = attackedTile)
-            for (unique in ourUnit.unit.getTriggeredUniques(UniqueType.TriggerUponDefeatingUnit, stateForConditionals))
-                if (unique.getModifiers(UniqueType.TriggerUponDefeatingUnit).any { enemy.unit.matchesFilter(it.params[0]) })
-                    UniqueTriggerActivation.triggerUnique(unique, ourUnit.unit, triggerNotificationText = "due to our [${ourUnit.getName()}] defeating a [${enemy.getName()}]")
+            for (unique in ourUnit.unit.getTriggeredUniques(UniqueType.TriggerUponDefeatingUnit, stateForConditionals)
+                    { enemy.unit.matchesFilter(it.params[0]) })
+                UniqueTriggerActivation.triggerUnique(unique, ourUnit.unit, triggerNotificationText = "due to our [${ourUnit.getName()}] defeating a [${enemy.getName()}]")
         }
 
+        fun triggerDamageUniquesForUnit(triggeringUnit: MapUnitCombatant, enemy: MapUnitCombatant, combatAction: CombatAction){
+            val stateForConditionals = StateForConditionals(civInfo = triggeringUnit.getCivInfo(),
+                ourCombatant = triggeringUnit, theirCombatant = enemy, tile = attackedTile, combatAction = combatAction)
+
+            for (unique in triggeringUnit.unit.getTriggeredUniques(UniqueType.TriggerUponDamagingUnit, stateForConditionals)
+                    { enemy.matchesFilter(it.params[0]) }){
+                if (unique.params[0] == Constants.targetUnit){
+                    UniqueTriggerActivation.triggerUnique(unique, enemy.unit, triggerNotificationText = "due to our [${enemy.getName()}] being damaged by a [${triggeringUnit.getName()}]")
+                } else {
+                    UniqueTriggerActivation.triggerUnique(unique, triggeringUnit.unit, triggerNotificationText = "due to our [${triggeringUnit.getName()}] damaging a [${enemy.getName()}]")
+                }
+            }
+        }
+        
         // Add culture when defeating a barbarian when Honor policy is adopted, gold from enemy killed when honor is complete
         // or any enemy military unit with Sacrificial captives unique (can be either attacker or defender!)
         if (defender.isDefeated() && defender is MapUnitCombatant && !defender.unit.isCivilian()) {
@@ -198,6 +203,11 @@ object Battle {
 
             if (defender is MapUnitCombatant) triggerVictoryUniques(defender, attacker)
             triggerDefeatUniques(attacker, defender, attackedTile)
+        }
+        
+        if (attacker is MapUnitCombatant && defender is MapUnitCombatant){
+            triggerDamageUniquesForUnit(attacker, defender, CombatAction.Attack)
+            if (!attacker.isRanged()) triggerDamageUniquesForUnit(defender, attacker, CombatAction.Defend)
         }
 
         if (attacker is MapUnitCombatant) {
@@ -332,14 +342,14 @@ object Battle {
         val attackerDamageDealt = defenderHealthBefore - defender.getHealth()
 
         if (attacker is MapUnitCombatant)
-            for (unique in attacker.unit.getTriggeredUniques(UniqueType.TriggerUponLosingHealth))
-                if (unique.modifiers.any { it.params[0].toInt() <= defenderDamageDealt })
-                    UniqueTriggerActivation.triggerUnique(unique, attacker.unit, triggerNotificationText = "due to losing [$defenderDamageDealt] HP")
+            for (unique in attacker.unit.getTriggeredUniques(UniqueType.TriggerUponLosingHealth)
+                    { it.params[0].toInt() <= defenderDamageDealt })
+                UniqueTriggerActivation.triggerUnique(unique, attacker.unit, triggerNotificationText = "due to losing [$defenderDamageDealt] HP")
 
         if (defender is MapUnitCombatant)
-            for (unique in defender.unit.getTriggeredUniques(UniqueType.TriggerUponLosingHealth))
-                if (unique.modifiers.any { it.params[0].toInt() <= attackerDamageDealt })
-                    UniqueTriggerActivation.triggerUnique(unique, defender.unit, triggerNotificationText = "due to losing [$attackerDamageDealt] HP")
+            for (unique in defender.unit.getTriggeredUniques(UniqueType.TriggerUponLosingHealth)
+                    { it.params[0].toInt() <= attackerDamageDealt })
+                UniqueTriggerActivation.triggerUnique(unique, defender.unit, triggerNotificationText = "due to losing [$attackerDamageDealt] HP")
 
         plunderFromDamage(attacker, defender, attackerDamageDealt)
         return DamageDealt(attackerDamageDealt, defenderDamageDealt)
@@ -405,7 +415,7 @@ object Battle {
                         if (defender.isDefeated() && attacker.isRanged()) " the defence of [" + defender.getName() + "]"
                         else " [" + defender.getName() + "]"
                     else " our [" + defender.getName() + "]"
-            val attackerHurtString = if (damageDealt != null) " ([-${damageDealt.defenderDealt}] HP)" else ""
+            val attackerHurtString = if (damageDealt != null && damageDealt.defenderDealt != 0) " ([-${damageDealt.defenderDealt}] HP)" else ""
             val defenderHurtString = if (damageDealt != null) " ([-${damageDealt.attackerDealt}] HP)" else ""
             val notificationString = attackerString + attackerHurtString + whatHappenedString + defenderString + defenderHurtString
             val attackerIcon = if (attacker is CityCombatant) NotificationIcon.City else attacker.getName()
@@ -473,7 +483,7 @@ object Battle {
                 if (!attacker.unit.baseUnit.movesLikeAirUnits && !(attacker.isMelee() && defender.isDefeated()))
                     unit.useMovementPoints(1f)
             } else unit.currentMovement = 0f
-            if (unit.isFortified() || unit.isSleeping())
+            if (unit.isFortified() || unit.isSleeping() || unit.isGuarding())
                 attacker.unit.action = null // but not, for instance, if it's Set Up - then it should definitely keep the action!
         } else if (attacker is CityCombatant) {
             attacker.city.attackedThisTurn = true
@@ -624,16 +634,12 @@ object Battle {
         }
     }
 
-    private fun doWithdrawFromMeleeAbility(attacker: MapUnitCombatant, defender: MapUnitCombatant, withdrawChance: Int): Boolean {
-        if (withdrawChance == 0) return false
+    private fun doWithdrawFromMeleeAbility(attacker: MapUnitCombatant, defender: MapUnitCombatant): Boolean {
         if (defender.unit.isEmbarked()) return false
         if (defender.unit.cache.cannotMove) return false
-
-        // This is where the chance comes into play
-        if (Random( // 'randomness' is consistent for turn and tile, to avoid save-scumming
-                attacker.getCivInfo().gameInfo.turns * defender.getTile().position.hashCode().toLong()
-            ).nextInt(100) > withdrawChance) return false
-
+        if (defender.unit.isEscorting()) return false // running away and leaving the escorted unit defeats the purpose of escorting
+        if (defender.unit.isGuarding()) return false // guarding this post and will fight to the death!
+        
         // Promotions have no effect as per what I could find in available documentation
         val fromTile = defender.getTile()
         val attackerTile = attacker.getTile()

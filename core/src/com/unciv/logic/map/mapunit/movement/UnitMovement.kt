@@ -43,6 +43,9 @@ class UnitMovement(val unit: MapUnit) {
 
         // If I can't move my only option is to stay...
         if (unitMovement == 0f || unit.cache.cannotMove) return distanceToTiles
+        // If our escort can't move, ditto
+        if (includeOtherEscortUnit && unit.isEscorting()
+            && unit.getOtherEscortUnit()?.currentMovement == 0f) return distanceToTiles
 
         var tilesToCheck = listOf(unitTile)
 
@@ -67,7 +70,8 @@ class UnitMovement(val unit: MapUnit) {
                         }
                     }
 
-                    if (!distanceToTiles.containsKey(neighbor) || distanceToTiles[neighbor]!!.totalDistance > totalDistanceToTile) { // this is the new best path
+                    val currentBestPath = distanceToTiles[neighbor]
+                    if (currentBestPath == null || currentBestPath.totalDistance > totalDistanceToTile) { // this is the new best path
                         val usableMovement = if (includeOtherEscortUnit && unit.isEscorting())
                             minOf(unitMovement, unit.getOtherEscortUnit()!!.currentMovement)
                         else unitMovement
@@ -372,7 +376,7 @@ class UnitMovement(val unit: MapUnit) {
             unit.removeFromTile() // we "teleport" them away
             unit.putInTile(allowedTile)
             // Cancel sleep or fortification if forcibly displaced - for now, leave movement / auto / explore orders
-            if (unit.isSleeping() || unit.isFortified())
+            if (unit.isSleeping() || unit.isFortified() || unit.isGuarding())
                 unit.action = null
             unit.mostRecentMoveType = UnitMovementMemoryType.UnitTeleported
 
@@ -431,7 +435,7 @@ class UnitMovement(val unit: MapUnit) {
         unit.mostRecentMoveType = UnitMovementMemoryType.UnitMoved
         val pathToLastReachableTile = distanceToTiles.getPathToTile(lastReachableTile)
 
-        if (unit.isFortified() || unit.isSetUpForSiege() || unit.isSleeping())
+        if (unit.isFortified() || unit.isGuarding() || unit.isSetUpForSiege() || unit.isSleeping())
             unit.action = null // un-fortify/un-setup/un-sleep after moving
 
         // If this unit is a carrier, keep record of its air payload whereabouts.
@@ -701,10 +705,10 @@ class UnitMovement(val unit: MapUnit) {
         movementCostCache: HashMap<Pair<Tile, Tile>, Float> = HashMap(),
         includeOtherEscortUnit: Boolean = true
     ): PathsToTilesWithinTurn {
-        val cacheResults = pathfindingCache.getDistanceToTiles(considerZoneOfControl)
-        if (cacheResults != null) {
-            return cacheResults
-        }
+//        val cacheResults = pathfindingCache.getDistanceToTiles(considerZoneOfControl)
+//        if (cacheResults != null) {
+//            return cacheResults
+//        }
         val distanceToTiles = getDistanceToTilesAtPosition(
             unit.currentTile.position,
             unit.currentMovement,

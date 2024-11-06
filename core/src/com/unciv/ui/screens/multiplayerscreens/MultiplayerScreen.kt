@@ -222,14 +222,15 @@ class MultiplayerScreen : PickerScreen() {
 
         Concurrency.runOnNonDaemonThreadPool("Skip turn") {
             try {
-                val skipTurnSuccess = game.onlineMultiplayer.skipCurrentPlayerTurn(multiplayerGame)
+                val skipTurnErrorMessage = game.onlineMultiplayer.skipCurrentPlayerTurn(multiplayerGame)
 
                 launchOnGLThread {
-                    if (skipTurnSuccess) {
+                    if (skipTurnErrorMessage == null) {
                         popup.close()
                     } else {
-                        popup.reuseWith("You can only resign if it's your turn", true)
+                        popup.reuseWith(skipTurnErrorMessage, true)
                     }
+                    gameList.update()
                 }
             } catch (ex: Exception) {
                 val (message) = LoadGameScreen.getLoadExceptionMessage(ex)
@@ -384,10 +385,13 @@ class MultiplayerScreen : PickerScreen() {
         selectedGame = multiplayerGame
 
         for (button in gameSpecificButtons) button.enable()
+        
         if (multiplayerGame.preview != null) {
             copyGameIdButton.enable()
+            rightSideButton.enable()
         } else {
             copyGameIdButton.disable()
+            rightSideButton.disable()
         }
 
         resignButton.isEnabled = multiplayerGame.preview?.getCurrentPlayerCiv()?.playerId == game.settings.multiplayer.userId
@@ -398,14 +402,15 @@ class MultiplayerScreen : PickerScreen() {
         } else {
             val durationInactive = Duration.between(Instant.ofEpochMilli(preview.currentTurnStartTime), Instant.now())
             forceResignButton.isVisible =
-                preview.getPlayerCiv(game.settings.multiplayer.userId)?.civName == Constants.spectator
-                    || durationInactive > Duration.ofDays(2)
+                game.settings.multiplayer.userId in preview.civilizations.map { it.playerId } &&
+                        preview.getPlayerCiv(game.settings.multiplayer.userId)?.civName == Constants.spectator
+                            || durationInactive > Duration.ofDays(2)
         }
-        skipTurnButton.isVisible = preview != null && preview.gameParameters.minutesUntilSkipTurn <=
-                (Duration.between(Instant.ofEpochMilli(preview.currentTurnStartTime), Instant.now()).toMinutes())
-
-        rightSideButton.enable()
-
+        skipTurnButton.isVisible = preview != null
+                && game.settings.multiplayer.userId in preview.civilizations.map { it.playerId }
+                && preview.gameParameters.minutesUntilSkipTurn <= 
+                    Duration.between(Instant.ofEpochMilli(preview.currentTurnStartTime), Instant.now()).toMinutes()
+        
         descriptionLabel.setText(MultiplayerHelpers.buildDescriptionText(multiplayerGame))
     }
 }

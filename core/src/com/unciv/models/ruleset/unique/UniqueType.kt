@@ -277,10 +277,11 @@ enum class UniqueType(
      */
     OnlyAvailable("Only available", UniqueTarget.Unit, UniqueTarget.Building, UniqueTarget.Improvement,
         UniqueTarget.Policy, UniqueTarget.Tech, UniqueTarget.Promotion, UniqueTarget.Ruins,
-        UniqueTarget.FollowerBelief, UniqueTarget.FounderBelief, UniqueTarget.Event,
+        UniqueTarget.FollowerBelief, UniqueTarget.FounderBelief, UniqueTarget.Event, UniqueTarget.EventChoice,
         docDescription = "Meant to be used together with conditionals, like \"Only available <after adopting [policy]> <while the empire is happy>\". Only allows Building when ALL conditionals are met. Will also block Upgrade and Transform actions. See also CanOnlyBeBuiltWhen"),
     Unavailable("Unavailable", UniqueTarget.Unit, UniqueTarget.Building, UniqueTarget.Improvement,
-        UniqueTarget.Policy, UniqueTarget.Tech, UniqueTarget.Promotion, UniqueTarget.Ruins, UniqueTarget.Event,
+        UniqueTarget.Policy, UniqueTarget.Tech, UniqueTarget.Promotion, UniqueTarget.Ruins,
+        UniqueTarget.Event, UniqueTarget.EventChoice,
         docDescription = "Meant to be used together with conditionals, like \"Unavailable <after generating a Great Prophet>\"."),
 
     ConvertFoodToProductionWhenConstructed("Excess Food converted to Production when under construction", UniqueTarget.Building, UniqueTarget.Unit),
@@ -404,12 +405,8 @@ enum class UniqueType(
     NoDefensiveTerrainBonus("No defensive terrain bonus", UniqueTarget.Unit, UniqueTarget.Global),
     NoDefensiveTerrainPenalty("No defensive terrain penalty", UniqueTarget.Unit, UniqueTarget.Global),
     NoDamagePenaltyWoundedUnits("No damage penalty for wounded units", UniqueTarget.Unit, UniqueTarget.Global),
-    @Deprecated("As of 4.12.4", ReplaceWith("No damage penalty for wounded units"))
-    NoDamagePenalty("Damage is ignored when determining unit Strength", UniqueTarget.Unit, UniqueTarget.Global),
     Uncapturable("Uncapturable", UniqueTarget.Unit),
     WithdrawsBeforeMeleeCombat("Withdraws before melee combat", UniqueTarget.Unit),
-    @Deprecated("As of 4.12.4", ReplaceWith("Withdraws before melee combat <with [amount]% chance>"))
-    MayWithdraw("May withdraw before melee ([amount]%)", UniqueTarget.Unit),
     CannotCaptureCities("Unable to capture cities", UniqueTarget.Unit, UniqueTarget.Global),
     CannotPillage("Unable to pillage tiles", UniqueTarget.Unit, UniqueTarget.Global),
 
@@ -417,7 +414,7 @@ enum class UniqueType(
     NoMovementToPillage("No movement cost to pillage", UniqueTarget.Unit, UniqueTarget.Global),
     CanMoveAfterAttacking("Can move after attacking", UniqueTarget.Unit),
     TransferMovement("Transfer Movement to [mapUnitFilter]", UniqueTarget.Unit),
-    MoveImmediatelyOnceBought("Can move immediately once bought", UniqueTarget.Unit),
+    CanMoveImmediatelyOnceBought("Can move immediately once bought", UniqueTarget.Unit),
 
     // Healing
     HealsOutsideFriendlyTerritory("May heal outside of friendly territory", UniqueTarget.Unit, UniqueTarget.Global),
@@ -519,6 +516,10 @@ enum class UniqueType(
     /** @see CostsResources */
     UnitActionStockpileCost("costs [amount] [stockpiledResource]", UniqueTarget.UnitActionModifier,
         docDescription = "A positive Integer value will be subtracted from your stock. Do not confuse with \"Costs [amount] [stockpiledResource]\" (uppercase 'C') for Improvements, Buildings, and Units."),
+    UnitActionRemovingPromotion("removing the [promotion] promotion/status", UniqueTarget.UnitActionModifier,
+        docDescription = "Removes the promotion/status from the unit -" +
+                " this is not a cost, units will be able to activate the action even without the promotion/status. " +
+                "To limit, use <with the [promotion] promotion> conditional"),
     UnitActionOnce("once", UniqueTarget.UnitActionModifier),
     UnitActionLimitedTimes("[amount] times", UniqueTarget.UnitActionModifier),
     UnitActionExtraLimitedTimes("[amount] additional time(s)", UniqueTarget.UnitActionModifier),
@@ -536,10 +537,6 @@ enum class UniqueType(
     NaturalWonderLatitude("Occurs on latitudes from [amount] to [amount] percent of distance equator to pole", UniqueTarget.Terrain, flags = UniqueFlag.setOfHiddenToUsers),
     NaturalWonderGroups("Occurs in groups of [amount] to [amount] tiles", UniqueTarget.Terrain, flags = UniqueFlag.setOfHiddenToUsers),
     NaturalWonderConvertNeighbors("Neighboring tiles will convert to [baseTerrain/terrainFeature]", UniqueTarget.Terrain, flags = UniqueFlag.setOfHiddenToUsers,
-        docDescription = "Supports conditionals that need only a Tile as context and nothing else, like `<with [n]% chance>`, and applies them per neighbor." +
-            "\nIf your mod renames Coast or Lakes, do not use this with one of these as parameter, as the code preventing artifacts won't work."),
-    @Deprecated("As of 4.12.19", ReplaceWith("Neighboring tiles will convert to [baseTerrain/terrainFeature] <in tiles without [simpleTerrain]>"))
-    NaturalWonderConvertNeighborsExcept("Neighboring tiles except [simpleTerrain] will convert to [baseTerrain/terrainFeature]", UniqueTarget.Terrain, flags = UniqueFlag.setOfHiddenToUsers,
         docDescription = "Supports conditionals that need only a Tile as context and nothing else, like `<with [n]% chance>`, and applies them per neighbor." +
             "\nIf your mod renames Coast or Lakes, do not use this with one of these as parameter, as the code preventing artifacts won't work."),
     GrantsStatsToFirstToDiscover("Grants [stats] to the first civilization to discover it", UniqueTarget.Terrain),
@@ -653,20 +650,28 @@ enum class UniqueType(
     ///////////////////////////////////////// region 08 CONDITIONALS /////////////////////////////////////////
 
 
-    /////// general conditionals
-    ConditionalChance("with [amount]% chance", UniqueTarget.Conditional),
+    /////// game conditionals
     ConditionalEveryTurns("every [positiveAmount] turns", UniqueTarget.Conditional),
     ConditionalBeforeTurns("before turn number [amount]", UniqueTarget.Conditional),
-    @Deprecated("As of 4.12.3", ReplaceWith("before turn number [amount]"))
-    ConditionalBeforeTurnsOld("before [amount] turns", UniqueTarget.Conditional),
     ConditionalAfterTurns("after turn number [amount]", UniqueTarget.Conditional),
-    @Deprecated("As of 4.12.3", ReplaceWith("after turn number [amount]"))
-    ConditionalAfterTurnsOld("after [amount] turns", UniqueTarget.Conditional),
+    ConditionalSpeed("on [speed] game speed", UniqueTarget.Conditional),
+    ConditionalDifficulty("on [difficulty] difficulty", UniqueTarget.Conditional),
+    ConditionalVictoryEnabled("when [victoryType] Victory is enabled", UniqueTarget.Conditional),
+    ConditionalVictoryDisabled("when [victoryType] Victory is disabled", UniqueTarget.Conditional),
+    ConditionalReligionEnabled("when religion is enabled", UniqueTarget.Conditional),
+    ConditionalReligionDisabled("when religion is disabled", UniqueTarget.Conditional),
+    ConditionalEspionageEnabled("when espionage is enabled", UniqueTarget.Conditional),
+    ConditionalEspionageDisabled("when espionage is disabled", UniqueTarget.Conditional),
+
+    /////// general conditionals
+    ConditionalChance("with [amount]% chance", UniqueTarget.Conditional),
     ConditionalTutorialsEnabled("if tutorials are enabled", UniqueTarget.Conditional, flags = UniqueFlag.setOfHiddenToUsers), // Hidden as no translations needed for now
     ConditionalTutorialCompleted("if tutorial [comment] is completed", UniqueTarget.Conditional, flags = UniqueFlag.setOfHiddenToUsers), // Hidden as no translations needed for now
 
     /////// civ conditionals
-    ConditionalCivFilter("for [civFilter]", UniqueTarget.Conditional),
+    ConditionalCivFilter("for [civFilter] Civilizations", UniqueTarget.Conditional),
+    @Deprecated("As of 4.13.15", ReplaceWith("for [civFilter] Civilizations"))
+    ConditionalCivFilterOld("for [civFilter]", UniqueTarget.Conditional),
     ConditionalWar("when at war", UniqueTarget.Conditional),
     ConditionalNotWar("when not at war", UniqueTarget.Conditional),
     ConditionalGoldenAge("during a Golden Age", UniqueTarget.Conditional),
@@ -681,10 +686,6 @@ enum class UniqueType(
     ConditionalBeforeEra("before the [era]", UniqueTarget.Conditional),
     ConditionalStartingFromEra("starting from the [era]", UniqueTarget.Conditional),
     ConditionalIfStartingInEra("if starting in the [era]", UniqueTarget.Conditional),
-
-    ConditionalSpeed("on [speed] game speed", UniqueTarget.Conditional),
-    ConditionalVictoryEnabled("when [victoryType] Victory is enabled", UniqueTarget.Conditional),
-    ConditionalVictoryDisabled("when [victoryType] Victory is disabled", UniqueTarget.Conditional),
 
     ConditionalFirstCivToResearch("if no other Civilization has researched this", UniqueTarget.Conditional),
     ConditionalTech("after discovering [tech]", UniqueTarget.Conditional),
@@ -732,13 +733,15 @@ enum class UniqueType(
     ConditionalCityWithoutBuilding("in cities without a [buildingFilter]", UniqueTarget.Conditional),
     ConditionalPopulationFilter("in cities with at least [amount] [populationFilter]", UniqueTarget.Conditional),
     ConditionalExactPopulationFilter("in cities with [amount] [populationFilter]", UniqueTarget.Conditional),
+    ConditionalBetweenPopulationFilter("in cities with between [amount] and [amount] [populationFilter]", UniqueTarget.Conditional),
+    ConditionalBelowPopulationFilter("in cities with less than [amount] [populationFilter]", UniqueTarget.Conditional),
     ConditionalWhenGarrisoned("with a garrison", UniqueTarget.Conditional),
 
     /////// unit conditionals
     ConditionalOurUnit("for [mapUnitFilter] units", UniqueTarget.Conditional),
     ConditionalOurUnitOnUnit("when [mapUnitFilter]", UniqueTarget.Conditional), // Same but for the unit itself
-    ConditionalUnitWithPromotion("for units with [promotion]", UniqueTarget.Conditional),
-    ConditionalUnitWithoutPromotion("for units without [promotion]", UniqueTarget.Conditional),
+    ConditionalUnitWithPromotion("for units with [promotion]", UniqueTarget.Conditional, docDescription = "Also applies to units with temporary status"),
+    ConditionalUnitWithoutPromotion("for units without [promotion]", UniqueTarget.Conditional, docDescription = "Also applies to units with temporary status"),
     ConditionalVsCity("vs cities", UniqueTarget.Conditional),
     ConditionalVsUnits("vs [mapUnitFilter] units", UniqueTarget.Conditional),
     ConditionalVsCombatant("vs [combatantFilter]", UniqueTarget.Conditional),
@@ -759,12 +762,8 @@ enum class UniqueType(
     ConditionalNearTiles("within [amount] tiles of a [tileFilter]", UniqueTarget.Conditional),
 
     ConditionalAdjacentTo("in tiles adjacent to [tileFilter] tiles", UniqueTarget.Conditional),
-    @Deprecated("As of 4.12.16", ReplaceWith("in tiles adjacent to [tileFilter] tiles"))
-    ConditionalAdjacentToOld("in tiles adjacent to [tileFilter]", UniqueTarget.Conditional),
 
     ConditionalNotAdjacentTo("in tiles not adjacent to [tileFilter] tiles", UniqueTarget.Conditional),
-    @Deprecated("As of 4.12.16", ReplaceWith("in tiles not adjacent to [tileFilter] tiles"))
-    ConditionalNotAdjacentToOld("in tiles not adjacent to [tileFilter]", UniqueTarget.Conditional),
 
 
     /////// area conditionals
@@ -776,8 +775,6 @@ enum class UniqueType(
     ConditionalCountableEqualTo("when number of [countable] is equal to [countable]", UniqueTarget.Conditional),
     ConditionalCountableDifferentThan("when number of [countable] is different than [countable]", UniqueTarget.Conditional),
     ConditionalCountableMoreThan("when number of [countable] is more than [countable]", UniqueTarget.Conditional),
-    @Deprecated("As of 4.12.3", ReplaceWith("when number of [countable] is more than [countable]"))
-    ConditionalCountableGreaterThan("when number of [countable] is greater than [countable]", UniqueTarget.Conditional),
     ConditionalCountableLessThan("when number of [countable] is less than [countable]", UniqueTarget.Conditional),
     ConditionalCountableBetween("when number of [countable] is between [countable] and [countable]", UniqueTarget.Conditional),
 
@@ -815,8 +812,6 @@ enum class UniqueType(
     OneTimeGainPantheon("Gain enough Faith for a Pantheon", UniqueTarget.Triggerable),
     OneTimeGainProphet("Gain enough Faith for [amount]% of a Great Prophet", UniqueTarget.Triggerable),
 
-    @Deprecated("As of 4.12.15", ReplaceWith("Gain control over [all] tiles in a [1]-tile radius"))
-    TakesOverAdjacentTiles("Constructing it will take over the tiles around it and assign them to your closest city", UniqueTarget.Improvement),
     OneTimeTakeOverTilesInRadius("Gain control over [tileFilter] tiles in a [amount]-tile radius", UniqueTarget.Triggerable),
 
     // todo: The "up to [All]" used in vanilla json is not nice to read. Split?
@@ -828,15 +823,7 @@ enum class UniqueType(
     OneTimeSpiesLevelUp("Promotes all spies [amount] time(s)", UniqueTarget.Triggerable),  // used in Policies, Buildings
     OneTimeGainSpy("Gain an extra spy", UniqueTarget.Triggerable),  // used in Wonders
 
-    OneTimeUnitHeal("Heal this unit by [positiveAmount] HP", UniqueTarget.UnitTriggerable),
-    OneTimeUnitDamage("This Unit takes [positiveAmount] damage", UniqueTarget.UnitTriggerable),
-    OneTimeUnitGainXP("This Unit gains [amount] XP", UniqueTarget.UnitTriggerable),
-    OneTimeUnitUpgrade("This Unit upgrades for free", UniqueTarget.UnitTriggerable),  // Not used in Vanilla
-    OneTimeUnitSpecialUpgrade("This Unit upgrades for free including special upgrades", UniqueTarget.UnitTriggerable),
-    OneTimeUnitGainPromotion("This Unit gains the [promotion] promotion", UniqueTarget.UnitTriggerable),  // Not used in Vanilla
-    OneTimeUnitRemovePromotion("This Unit loses the [promotion] promotion", UniqueTarget.UnitTriggerable),
-    OneTimeUnitGainMovement("This Unit gains [amount] movement", UniqueTarget.UnitTriggerable),
-    OneTimeUnitLoseMovement("This Unit loses [amount] movement", UniqueTarget.UnitTriggerable),
+
     SkipPromotion("Doing so will consume this opportunity to choose a Promotion", UniqueTarget.Promotion),
     FreePromotion("This Promotion is free", UniqueTarget.Promotion),
 
@@ -848,7 +835,36 @@ enum class UniqueType(
     FreeStatBuildings("Provides the cheapest [stat] building in your first [positiveAmount] cities for free", UniqueTarget.Triggerable),  // used in Policy
     FreeSpecificBuildings("Provides a [buildingName] in your first [positiveAmount] cities for free", UniqueTarget.Triggerable),  // used in Policy
     TriggerEvent("Triggers a [event] event", UniqueTarget.Triggerable),
+    MarkTutorialComplete("Mark tutorial [comment] complete", UniqueTarget.Triggerable, flags = UniqueFlag.setOfHiddenNoConditionals),
+    
+    //endregion
+    
+    ///////////////////////////////////////// region 09 UNIT TRIGGERABLES /////////////////////////////////////////
 
+    OneTimeUnitHeal("[unitTriggerTarget] heals [positiveAmount] HP", UniqueTarget.UnitTriggerable),
+
+    OneTimeUnitDamage("[unitTriggerTarget] takes [positiveAmount] damage", UniqueTarget.UnitTriggerable),
+
+    OneTimeUnitGainXP("[unitTriggerTarget] gains [amount] XP", UniqueTarget.UnitTriggerable),
+
+    OneTimeUnitUpgrade("[unitTriggerTarget] upgrades for free", UniqueTarget.UnitTriggerable),
+
+    OneTimeUnitSpecialUpgrade("[unitTriggerTarget] upgrades for free including special upgrades", UniqueTarget.UnitTriggerable),
+    
+    OneTimeUnitGainPromotion("[unitTriggerTarget] gains the [promotion] promotion", UniqueTarget.UnitTriggerable),
+    
+    OneTimeUnitRemovePromotion("[unitTriggerTarget] loses the [promotion] promotion", UniqueTarget.UnitTriggerable),
+    
+    OneTimeUnitGainMovement("[unitTriggerTarget] gains [amount] movement", UniqueTarget.UnitTriggerable),
+    
+    OneTimeUnitLoseMovement("[unitTriggerTarget] loses [amount] movement", UniqueTarget.UnitTriggerable),
+    
+    OneTimeUnitGainStatus("[unitTriggerTarget] gains the [promotion] status for [positiveAmount] turn(s)", UniqueTarget.UnitTriggerable,
+        docDescription = "Statuses are temporary promotions. They do not stack, and reapplying a specific status take the highest number - so reapplying a 3-turn on a 1-turn makes it 3, but doing the opposite will have no effect. " +
+                "Turns left on the status decrease at the *start of turn*, so bonuses applied for 1 turn are stll applied during other civ's turns."),
+    OneTimeUnitLoseStatus("[unitTriggerTarget] loses the [promotion] status", UniqueTarget.UnitTriggerable),
+
+    OneTimeUnitDestroyed("[unitTriggerTarget] is destroyed", UniqueTarget.UnitTriggerable),
     //endregion
 
 
@@ -882,10 +898,16 @@ enum class UniqueType(
 
     ///////////////////////////////////////// region 11 UNIT TRIGGERS /////////////////////////////////////////
 
+    TriggerUponDamagingUnit("upon damaging a [mapUnitFilter] unit", UniqueTarget.UnitTriggerCondition,
+        docDescription = "Can apply triggers to to damaged unit by setting the first parameter to 'Target Unit'"),
     TriggerUponDefeatingUnit("upon defeating a [mapUnitFilter] unit", UniqueTarget.UnitTriggerCondition),
     TriggerUponExpendingUnit("upon expending a [mapUnitFilter] unit", UniqueTarget.UnitTriggerCondition),
     TriggerUponDefeat("upon being defeated", UniqueTarget.UnitTriggerCondition),
     TriggerUponPromotion("upon being promoted", UniqueTarget.UnitTriggerCondition),
+    TriggerUponPromotionGain("upon gaining the [promotion] promotion", UniqueTarget.UnitTriggerCondition),
+    TriggerUponPromotionLoss("upon losing the [promotion] promotion", UniqueTarget.UnitTriggerCondition),
+    TriggerUponStatusGain("upon gaining the [promotion] status", UniqueTarget.UnitTriggerCondition),
+    TriggerUponStatusLoss("upon losing the [promotion] status", UniqueTarget.UnitTriggerCondition),
     TriggerUponLosingHealth("upon losing at least [amount] HP in a single attack", UniqueTarget.UnitTriggerCondition),
     TriggerUponEndingTurnInTile("upon ending a turn in a [tileFilter] tile", UniqueTarget.UnitTriggerCondition),
     TriggerUponDiscoveringTile("upon discovering a [tileFilter] tile", UniqueTarget.UnitTriggerCondition),
@@ -896,17 +918,28 @@ enum class UniqueType(
 
     ConditionalTimedUnique("for [amount] turns", UniqueTarget.MetaModifier,
         docDescription = "Turns this unique into a trigger, activating this unique as a *global* unique for a number of turns"),
+
     
+    @Deprecated("As of 4.13.18", ReplaceWith("Only available <when [victoryType] Victory is enabled>"))
+    HiddenWithoutVictoryType("Hidden when [victoryType] Victory is disabled", UniqueTarget.Building, UniqueTarget.Unit, flags = UniqueFlag.setOfHiddenToUsers),
+
+    @Deprecated("As of 4.13.18", ReplaceWith("Only available <when religion is enabled>"))
     HiddenWithoutReligion("Hidden when religion is disabled",
         UniqueTarget.Unit, UniqueTarget.Building, UniqueTarget.Ruins, UniqueTarget.Tutorial,
         flags = UniqueFlag.setOfHiddenToUsers),
+    
+    @Deprecated("As of 4.13.19", ReplaceWith("Only available <when espionage is enabled>"))
     HiddenWithoutEspionage("Hidden when espionage is disabled", UniqueTarget.Building,
         flags = UniqueFlag.setOfHiddenToUsers),
 
-    HiddenWithoutVictoryType("Hidden when [victoryType] Victory is disabled", UniqueTarget.Building, UniqueTarget.Unit, flags = UniqueFlag.setOfHiddenToUsers),
+    AiChoiceWeight("[relativeAmount]% weight to this choice for AI decisions", UniqueTarget.Tech,
+        UniqueTarget.Promotion, UniqueTarget.Policy, flags = UniqueFlag.setOfHiddenToUsers),
+    
     HiddenFromCivilopedia("Will not be displayed in Civilopedia", *UniqueTarget.Displayable, flags = UniqueFlag.setOfHiddenToUsers),
+    ShowsWhenUnbuilable("Shown while unbuilable", UniqueTarget.Building, UniqueTarget.Unit, flags = UniqueFlag.setOfHiddenToUsers),
     ModifierHiddenFromUsers("hidden from users", UniqueTarget.MetaModifier),
     ForEveryCountable("for every [countable]", UniqueTarget.MetaModifier),
+    ForEveryAdjacentTile("for every adjacent [tileFilter]", UniqueTarget.MetaModifier),
     ForEveryAmountCountable("for every [amount] [countable]", UniqueTarget.MetaModifier),
     ModifiedByGameSpeed("(modified by game speed)", UniqueTarget.MetaModifier,
         docDescription = "Can only be applied to certain uniques, see details of each unique for specifics"),
@@ -924,7 +957,6 @@ enum class UniqueType(
     AllowRazeHolyCity("Allow raze holy city", UniqueTarget.ModOptions, flags = UniqueFlag.setOfNoConditionals),
 
     SuppressWarnings("Suppress warning [validationWarning]", *UniqueTarget.CanIncludeSuppression, flags = UniqueFlag.setOfHiddenNoConditionals, docDescription = Suppression.uniqueDocDescription),
-    MarkTutorialComplete("Mark tutorial [comment] complete", UniqueTarget.Event, flags = UniqueFlag.setOfHiddenNoConditionals),
 
     // Declarative Mod compatibility (see [ModCompatibility]):
     // Note there is currently no display for these, but UniqueFlag.HiddenToUsers is not set.
@@ -941,11 +973,50 @@ enum class UniqueType(
     ModMapPreselection("Mod preselects map [comment]", UniqueTarget.ModOptions, flags = UniqueFlag.setOfNoConditionals,
         docDescription = "Only meaningful for Mods containing several maps. When this mod is selected on the new game screen's custom maps mod dropdown, the named map will be selected on the map dropdown. Also disables selection by recently modified. Case insensitive."),
     ConditionalModEnabled("if [modFilter] is enabled", UniqueTarget.Conditional),
+    ConditionalModNotEnabled("if [modFilter] is not enabled", UniqueTarget.Conditional),
 
     // endregion
 
     ///////////////////////////////////////////// region 99 DEPRECATED AND REMOVED /////////////////////////////////////////////
+    @Deprecated("As of 4.13.2", ReplaceWith("[This Unit] gains [amount] movement"), DeprecationLevel.ERROR)
+    OneTimeUnitGainMovementOld("This Unit gains [amount] movement", UniqueTarget.UnitTriggerable),
+    @Deprecated("As of 4.13.2", ReplaceWith("[This Unit] loses the [promotion] promotion"), DeprecationLevel.ERROR)
+    OneTimeUnitRemovePromotionOld("This Unit loses the [promotion] promotion", UniqueTarget.UnitTriggerable),
+    @Deprecated("As of 4.13.2", ReplaceWith("[This Unit] gains the [promotion] promotion"), DeprecationLevel.ERROR)
+    OneTimeUnitGainPromotionOld("This Unit gains the [promotion] promotion", UniqueTarget.UnitTriggerable),  // Not used in Vanilla
+    @Deprecated("As of 4.13.2", ReplaceWith("[This Unit] upgrades for free including special upgrades"), DeprecationLevel.ERROR)
+    OneTimeUnitSpecialUpgradeOld("This Unit upgrades for free including special upgrades", UniqueTarget.UnitTriggerable),
+    @Deprecated("As of 4.13.2", ReplaceWith("[This Unit] heals [positiveAmount] HP"), DeprecationLevel.ERROR)
+    OneTimeUnitHealOld("Heal this unit by [positiveAmount] HP", UniqueTarget.UnitTriggerable),
+    @Deprecated("As of 4.13.2", ReplaceWith("[This Unit] takes [positiveAmount] damage"), DeprecationLevel.ERROR)
+    OneTimeUnitDamageOld("This Unit takes [positiveAmount] damage", UniqueTarget.UnitTriggerable),
+    @Deprecated("As of 4.13.2", ReplaceWith("[This Unit] gains [amount] XP"), DeprecationLevel.ERROR)
+    OneTimeUnitGainXPOld("This Unit gains [amount] XP", UniqueTarget.UnitTriggerable),
+    @Deprecated("As of 4.13.2", ReplaceWith("[This Unit] upgrades for free"), DeprecationLevel.ERROR)
+    OneTimeUnitUpgradeOld("This Unit upgrades for free", UniqueTarget.UnitTriggerable),  // Not used in Vanilla
+    @Deprecated("As of 4.13.2", ReplaceWith("[This Unit] loses [amount] movement"), DeprecationLevel.ERROR)
+    OneTimeUnitLoseMovementOld("This Unit loses [amount] movement", UniqueTarget.UnitTriggerable),
+    @Deprecated("As of 4.12.19", ReplaceWith("Neighboring tiles will convert to [baseTerrain/terrainFeature] <in tiles without [simpleTerrain]>"), DeprecationLevel.ERROR)
+    NaturalWonderConvertNeighborsExcept("Neighboring tiles except [simpleTerrain] will convert to [baseTerrain/terrainFeature]", UniqueTarget.Terrain, flags = UniqueFlag.setOfHiddenToUsers,
+        docDescription = "Supports conditionals that need only a Tile as context and nothing else, like `<with [n]% chance>`, and applies them per neighbor." +
+                "\nIf your mod renames Coast or Lakes, do not use this with one of these as parameter, as the code preventing artifacts won't work."),
+    @Deprecated("As of 4.12.16", ReplaceWith("in tiles adjacent to [tileFilter] tiles"), DeprecationLevel.ERROR)
+    ConditionalAdjacentToOld("in tiles adjacent to [tileFilter]", UniqueTarget.Conditional),
+    @Deprecated("As of 4.12.16", ReplaceWith("in tiles not adjacent to [tileFilter] tiles"), DeprecationLevel.ERROR)
+    ConditionalNotAdjacentToOld("in tiles not adjacent to [tileFilter]", UniqueTarget.Conditional),
+    @Deprecated("As of 4.12.15", ReplaceWith("Gain control over [all] tiles in a [1]-tile radius"), DeprecationLevel.ERROR)
+    TakesOverAdjacentTiles("Constructing it will take over the tiles around it and assign them to your closest city", UniqueTarget.Improvement),
 
+    @Deprecated("As of 4.12.4", ReplaceWith("No damage penalty for wounded units"), DeprecationLevel.ERROR)
+    NoDamagePenalty("Damage is ignored when determining unit Strength", UniqueTarget.Unit, UniqueTarget.Global),
+    @Deprecated("As of 4.12.4", ReplaceWith("Withdraws before melee combat <with [amount]% chance>"), DeprecationLevel.ERROR)
+    MayWithdraw("May withdraw before melee ([amount]%)", UniqueTarget.Unit),
+    @Deprecated("As of 4.12.3", ReplaceWith("when number of [countable] is more than [countable]"), DeprecationLevel.ERROR)
+    ConditionalCountableGreaterThan("when number of [countable] is greater than [countable]", UniqueTarget.Conditional),
+    @Deprecated("As of 4.12.3", ReplaceWith("before turn number [amount]"), DeprecationLevel.ERROR)
+    ConditionalBeforeTurnsOld("before [amount] turns", UniqueTarget.Conditional),
+    @Deprecated("As of 4.12.3", ReplaceWith("after turn number [amount]"), DeprecationLevel.ERROR)
+    ConditionalAfterTurnsOld("after [amount] turns", UniqueTarget.Conditional),
     @Deprecated("As of 4.11.19", ReplaceWith("Gain [100] [Gold] <upon expending a [Great Person] unit> <(modified by game speed)>"), DeprecationLevel.ERROR)
     ProvidesGoldWheneverGreatPersonExpended("Provides a sum of gold each time you spend a Great Person", UniqueTarget.Global),
     @Deprecated("As of 4.11.19", ReplaceWith("Gain [amount] [stat] <upon expending a [Great Person] unit> <(modified by game speed)>"), DeprecationLevel.ERROR)
